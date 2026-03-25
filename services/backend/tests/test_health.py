@@ -17,3 +17,10 @@ def test_unknown_route_returns_not_found() -> None:
     response = client.get("/missing")
 
     assert response.status_code == 404
+
+
+def test_health_allows_local_renderer_origin() -> None:
+    response = client.get("/health", headers={"Origin": "http://127.0.0.1:5173"})
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "http://127.0.0.1:5173"
