@@ -1,6 +1,8 @@
 :root {
   color: #0f172a;
-  background: linear-gradient(180deg, #f3f7fb 0%, #e8eef7 100%);
+  background:
+    radial-gradient(circle at top, rgba(59, 130, 246, 0.18), transparent 40%),
+    linear-gradient(180deg, #f8fafc 0%, #dbeafe 100%);
   font-family:
     "Segoe UI",
     "Helvetica Neue",
@@ -22,58 +24,63 @@ body {
 
 .app-shell {
   min-height: 100vh;
-  display: grid;
-  place-items: center;
   padding: 32px;
 }
 
-.app-card {
-  width: min(560px, 100%);
-  padding: 40px;
-  border-radius: 24px;
-  background: rgba(255, 255, 255, 0.92);
-  box-shadow: 0 24px 80px rgba(15, 23, 42, 0.12);
+.app-shell--centered {
+  display: grid;
+  place-items: center;
 }
 
-.app-eyebrow {
-  display: inline-block;
-  margin-bottom: 12px;
-  font-size: 0.75rem;
+.connection-button {
+  min-width: 280px;
+  min-height: 72px;
+  padding: 18px 28px;
+  border: 0;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #1d4ed8 0%, #3b82f6 100%);
+  color: #eff6ff;
+  font-size: 1rem;
   font-weight: 700;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  color: #2563eb;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  box-shadow: 0 18px 48px rgba(29, 78, 216, 0.28);
+  transition:
+    transform 160ms ease,
+    box-shadow 160ms ease,
+    background 160ms ease;
 }
 
-.app-card h1 {
-  margin: 0;
-  font-size: clamp(2rem, 4vw, 3rem);
+.connection-button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 22px 52px rgba(29, 78, 216, 0.34);
 }
 
-.app-card p {
-  margin: 16px 0 0;
-  color: #334155;
-  line-height: 1.6;
+.connection-button:disabled {
+  cursor: progress;
+  opacity: 0.9;
 }
 
-.app-metadata {
-  margin: 28px 0 0;
+.connection-button--idle {
+  background: linear-gradient(135deg, #1d4ed8 0%, #3b82f6 100%);
 }
 
-.app-metadata div {
-  padding: 16px 18px;
-  border-radius: 16px;
-  background: #eff6ff;
+.connection-button--loading {
+  background: linear-gradient(135deg, #0f172a 0%, #334155 100%);
 }
 
-.app-metadata dt {
-  font-size: 0.85rem;
-  font-weight: 700;
-  color: #1d4ed8;
+.connection-button--success {
+  background: linear-gradient(135deg, #166534 0%, #22c55e 100%);
+  box-shadow: 0 18px 48px rgba(22, 101, 52, 0.28);
 }
 
-.app-metadata dd {
-  margin: 8px 0 0;
-  font-family: "SFMono-Regular", "Menlo", monospace;
-  color: #0f172a;
+.connection-button--fail {
+  background: linear-gradient(135deg, #991b1b 0%, #ef4444 100%);
+  box-shadow: 0 18px 48px rgba(153, 27, 27, 0.28);
+}
+
+@media (max-width: 480px) {
+  .connection-button {
+    min-width: 100%;
+  }
 }
