@@ -1,0 +1,13 @@
+name: lmctrlf-dev
+channels:
+  - conda-forge
+dependencies:
+  - python=3.13
+  - pip
+  - fastapi
+  - uvicorn
+  - httpx
+  - pydantic>=2
+  - pydantic-settings
+  - pytest
+  - pytest-asyncio
