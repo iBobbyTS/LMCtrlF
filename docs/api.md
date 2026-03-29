@@ -30,4 +30,4 @@ The preload layer exposes a minimal browser bridge:
 window.lmctrlf?.getBackendBaseUrl(): string
 ```
 
-The renderer uses this value as the default backend base URL in development.
+The current UI prototype no longer consumes this value directly, but the bridge remains available for future backend integration.

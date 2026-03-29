@@ -1,500 +1,718 @@
-import { HashRouter, NavLink, Navigate, Route, Routes } from "react-router-dom";
+import { useEffect, useState, type CSSProperties } from "react";
 
 import {
   accessibilityOptions,
-  chatMessages,
-  citations,
-  cloudProfiles,
-  documents,
-  hardwareTiers,
-  importJobs,
-  localProfiles,
-  projects
+  projectDocuments,
+  projectThreads,
+  projects,
+  providerProfiles,
+  type AccessibilityOption,
+  type ChatThread,
+  type ProjectDocument,
+  type ProjectSummary,
+  type ProviderDraft
 } from "./mockData";
 import "./styles.css";
 
-const navigationItems = [
-  { label: "Documents", to: "/documents" },
-  { label: "Chat", to: "/chat" },
-  { label: "Settings", to: "/settings" }
-];
+type AppView = "projects" | "settings" | "project-files" | "project-chat";
 
-const DocumentManagementPage = () => {
-  return (
-    <section className="page-layout" aria-labelledby="documents-heading">
-      <header className="page-hero">
-        <div>
-          <span className="eyebrow">Workspace</span>
-          <h1 id="documents-heading">Document Control Center</h1>
-          <p>
-            Organize imported files, prepare projects for indexing, and review privacy and
-            hardware guidance before running any retrieval workflow.
-          </p>
-        </div>
-        <div className="hero-badges">
-          <span>PDF and TXT ready</span>
-          <span>Desktop-first workflow</span>
-        </div>
-      </header>
+const accentPalette = ["#c2410c", "#14532d", "#1d4ed8", "#7c2d12", "#0f766e"];
+const chatDrawerBreakpoint = 1180;
 
-      <section className="summary-grid" aria-label="Document management summary">
-        <article className="summary-card">
-          <span>Total Projects</span>
-          <strong>{projects.length}</strong>
-          <p>Grouped by coursework, contracts, and research topics.</p>
-        </article>
-        <article className="summary-card">
-          <span>Imported Documents</span>
-          <strong>{documents.length}</strong>
-          <p>Ready for review before indexing begins.</p>
-        </article>
-        <article className="summary-card">
-          <span>Active Jobs</span>
-          <strong>{importJobs.filter((job) => job.status !== "Complete").length}</strong>
-          <p>Progress indicators are visible whenever processing takes time.</p>
-        </article>
-      </section>
+const getIsWideChatLayout = (): boolean => {
+  return window.innerWidth >= chatDrawerBreakpoint;
+};
 
-      <section className="content-grid">
-        <article className="panel panel--feature">
-          <div className="panel-header">
-            <div>
-              <span className="eyebrow">Import</span>
-              <h2>Bring in a new document set</h2>
-            </div>
-            <button className="ghost-button" type="button">
-              Browse Files
-            </button>
-          </div>
-          <div className="dropzone" role="button" tabIndex={0}>
-            <div className="dropzone-icon" aria-hidden="true">
-              +
-            </div>
-            <div>
-              <strong>Drop PDF or TXT files here</strong>
-              <p>
-                Multiple files can be added to the same project before indexing. Word and other
-                formats can be introduced later.
-              </p>
-            </div>
-          </div>
-          <div className="notice-stack">
-            <div className="notice notice--warning">
-              <strong>Privacy Notice</strong>
-              <p>
-                Avoid sensitive material. Providers may apply their own terms when cloud models are
-                used later.
-              </p>
-            </div>
-            <div className="notice notice--info">
-              <strong>Hardware Guidance</strong>
-              <p>
-                Local models perform best with a dedicated GPU and 32GB+ memory. Slower hardware
-                may require longer indexing and answer times.
-              </p>
-            </div>
-          </div>
-        </article>
+const cloneProjects = (): ProjectSummary[] => projects.map((project) => ({ ...project }));
 
-        <article className="panel">
-          <div className="panel-header">
-            <div>
-              <span className="eyebrow">Projects</span>
-              <h2>Active workspaces</h2>
-            </div>
-            <span className="panel-meta">3 tracked</span>
-          </div>
-          <ul className="project-list">
-            {projects.map((project) => (
-              <li key={project.name} className="project-card">
-                <div>
-                  <strong>{project.name}</strong>
-                  <p>{project.description}</p>
-                </div>
-                <span>{project.documents} docs</span>
-              </li>
-            ))}
-          </ul>
-        </article>
-
-        <article className="panel panel--wide">
-          <div className="panel-header">
-            <div>
-              <span className="eyebrow">Library</span>
-              <h2>Imported documents</h2>
-            </div>
-            <span className="panel-meta">Desktop only</span>
-          </div>
-          <table className="document-table">
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Type</th>
-                <th>Project</th>
-                <th>Status</th>
-                <th>Last Updated</th>
-              </tr>
-            </thead>
-            <tbody>
-              {documents.map((document) => (
-                <tr key={document.name}>
-                  <td>{document.name}</td>
-                  <td>{document.type}</td>
-                  <td>{document.project}</td>
-                  <td>
-                    <span className={`status-pill status-pill--${document.status.toLowerCase()}`}>
-                      {document.status}
-                    </span>
-                  </td>
-                  <td>{document.updatedAt}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </article>
-
-        <article className="panel">
-          <div className="panel-header">
-            <div>
-              <span className="eyebrow">Queue</span>
-              <h2>Indexing progress</h2>
-            </div>
-            <span className="panel-meta">Visible for long-running work</span>
-          </div>
-          <ul className="job-list">
-            {importJobs.map((job) => (
-              <li key={job.name} className="job-item">
-                <div className="job-copy">
-                  <strong>{job.name}</strong>
-                  <span>{job.status}</span>
-                </div>
-                <div className="job-progress">
-                  <div className="job-progress-bar">
-                    <span style={{ width: `${job.progress}%` }} />
-                  </div>
-                  <small>{job.progress}%</small>
-                </div>
-              </li>
-            ))}
-          </ul>
-        </article>
-      </section>
-    </section>
+const cloneDocuments = (): Record<string, ProjectDocument[]> => {
+  return Object.fromEntries(
+    Object.entries(projectDocuments).map(([projectId, items]) => [
+      projectId,
+      items.map((item) => ({ ...item }))
+    ])
   );
 };
 
-const PlaceholderPage = ({ title, description }: { title: string; description: string }) => {
-  return (
-    <section className="placeholder-page" aria-labelledby={`${title}-heading`}>
-      <span className="eyebrow">Next Branch</span>
-      <h1 id={`${title}-heading`}>{title}</h1>
-      <p>{description}</p>
-    </section>
+const cloneThreads = (): Record<string, ChatThread[]> => {
+  return Object.fromEntries(
+    Object.entries(projectThreads).map(([projectId, items]) => [
+      projectId,
+      items.map((item) => ({
+        ...item,
+        messages: item.messages.map((message) => ({ ...message }))
+      }))
+    ])
   );
 };
 
-const ChatPage = () => {
-  return (
-    <section className="page-layout" aria-labelledby="chat-heading">
-      <header className="page-hero page-hero--compact">
-        <div>
-          <span className="eyebrow">Query Workspace</span>
-          <h1 id="chat-heading">Grounded Chat Review</h1>
-          <p>
-            Ask questions about imported material, inspect cited evidence, and keep the source
-            context visible while drafting answers.
-          </p>
-        </div>
-        <div className="hero-badges">
-          <span>Context-aware</span>
-          <span>Citation-first</span>
-        </div>
-      </header>
+const cloneProviders = (): ProviderDraft[] => providerProfiles.map((profile) => ({ ...profile }));
 
-      <section className="chat-layout">
-        <article className="panel chat-panel">
-          <div className="panel-header">
-            <div>
-              <span className="eyebrow">Conversation</span>
-              <h2>Answer drafting workspace</h2>
-            </div>
-            <span className="panel-meta">Project: Software Design Course</span>
-          </div>
-          <div className="context-banner">
-            <strong>Focused documents</strong>
-            <p>
-              Assignment3_ENSF400_L02_Group01.pdf and Course_Project_Rubric.txt are pinned for the
-              current session.
-            </p>
-          </div>
-          <div className="message-thread" aria-label="Chat transcript">
-            {chatMessages.map((message) => (
-              <article
-                key={message.id}
-                className={`message-bubble message-bubble--${message.role.toLowerCase()}`}
-              >
-                <span className="message-role">{message.role}</span>
-                <p>{message.content}</p>
-              </article>
-            ))}
-          </div>
-          <div className="composer-card">
-            <label className="composer-label" htmlFor="chat-input">
-              Ask a follow-up question
-            </label>
-            <textarea
-              id="chat-input"
-              className="composer-input"
-              defaultValue="What are the three required desktop pages and which one has the highest implementation priority?"
-            />
-            <div className="composer-footer">
-              <span>Response progress and streaming states will appear here later.</span>
-              <button className="ghost-button" type="button">
-                Send
-              </button>
-            </div>
-          </div>
-        </article>
+const cloneAccessibility = (): AccessibilityOption[] =>
+  accessibilityOptions.map((option) => ({ ...option }));
 
-        <aside className="chat-sidebar">
-          <article className="panel">
-            <div className="panel-header">
-              <div>
-                <span className="eyebrow">Evidence</span>
-                <h2>Referenced passages</h2>
-              </div>
-              <span className="panel-meta">Top matches</span>
-            </div>
-            <ul className="citation-list">
-              {citations.map((citation) => (
-                <li key={citation.id} className="citation-card">
-                  <strong>{citation.title}</strong>
-                  <span>{citation.source}</span>
-                  <p>{citation.snippet}</p>
-                </li>
-              ))}
-            </ul>
-          </article>
-
-          <article className="panel">
-            <div className="panel-header">
-              <div>
-                <span className="eyebrow">Safety</span>
-                <h2>Answer accuracy</h2>
-              </div>
-            </div>
-            <div className="notice-stack">
-              <div className="notice notice--warning">
-                <strong>Model responses may be inaccurate</strong>
-                <p>Always verify the original source text before finalizing a conclusion.</p>
-              </div>
-              <div className="notice notice--info">
-                <strong>Progress visibility</strong>
-                <p>Search, retrieval, and response progress should remain visible during long tasks.</p>
-              </div>
-            </div>
-          </article>
-        </aside>
-      </section>
-    </section>
-  );
-};
-
-const ConfigurationPage = () => {
-  return (
-    <section className="page-layout" aria-labelledby="settings-heading">
-      <header className="page-hero page-hero--compact">
-        <div>
-          <span className="eyebrow">Provider Setup</span>
-          <h1 id="settings-heading">Configuration Center</h1>
-          <p>
-            Prepare local and cloud model settings, review hardware expectations, and keep desktop
-            accessibility controls visible before any real integrations are added.
-          </p>
-        </div>
-        <div className="hero-badges">
-          <span>Local + cloud</span>
-          <span>Accessibility aware</span>
-        </div>
-      </header>
-
-      <section className="settings-layout">
-        <article className="panel panel--wide">
-          <div className="panel-header">
-            <div>
-              <span className="eyebrow">Providers</span>
-              <h2>Runtime connections</h2>
-            </div>
-            <span className="panel-meta">Mock form only</span>
-          </div>
-          <div className="provider-grid">
-            <section className="provider-column">
-              <div className="provider-column-header">
-                <strong>Local runtimes</strong>
-                <p>Prioritize LM Studio-compatible local endpoints for offline workflows.</p>
-              </div>
-              {localProfiles.map((profile) => (
-                <article key={profile.name} className="provider-card">
-                  <div className="provider-card-top">
-                    <strong>{profile.name}</strong>
-                    <span>{profile.status}</span>
-                  </div>
-                  <label>
-                    Base URL
-                    <input readOnly value={profile.baseUrl} />
-                  </label>
-                  <label>
-                    Model
-                    <input readOnly value={profile.model} />
-                  </label>
-                  <p>{profile.note}</p>
-                </article>
-              ))}
-            </section>
-
-            <section className="provider-column">
-              <div className="provider-column-header">
-                <strong>Cloud providers</strong>
-                <p>Use OpenAI-compatible endpoints when internet access and credentials are available.</p>
-              </div>
-              {cloudProfiles.map((profile) => (
-                <article key={profile.name} className="provider-card">
-                  <div className="provider-card-top">
-                    <strong>{profile.name}</strong>
-                    <span>{profile.status}</span>
-                  </div>
-                  <label>
-                    Endpoint
-                    <input readOnly value={profile.baseUrl} />
-                  </label>
-                  <label>
-                    API Key
-                    <input readOnly value={profile.apiKeyPreview} />
-                  </label>
-                  <label>
-                    Model
-                    <input readOnly value={profile.model} />
-                  </label>
-                  <p>{profile.note}</p>
-                </article>
-              ))}
-            </section>
-          </div>
-        </article>
-
-        <article className="panel">
-          <div className="panel-header">
-            <div>
-              <span className="eyebrow">Guidance</span>
-              <h2>Hardware expectations</h2>
-            </div>
-          </div>
-          <ul className="tier-list">
-            {hardwareTiers.map((tier) => (
-              <li key={tier.title} className="tier-card">
-                <strong>{tier.title}</strong>
-                <span>{tier.memory}</span>
-                <p>{tier.description}</p>
-              </li>
-            ))}
-          </ul>
-        </article>
-
-        <article className="panel">
-          <div className="panel-header">
-            <div>
-              <span className="eyebrow">Accessibility</span>
-              <h2>Experience controls</h2>
-            </div>
-          </div>
-          <ul className="accessibility-list">
-            {accessibilityOptions.map((option) => (
-              <li key={option.name} className="accessibility-item">
-                <div>
-                  <strong>{option.name}</strong>
-                  <p>{option.description}</p>
-                </div>
-                <span className={`toggle-pill toggle-pill--${option.state.toLowerCase()}`}>
-                  {option.state}
-                </span>
-              </li>
-            ))}
-          </ul>
-        </article>
-
-        <article className="panel">
-          <div className="panel-header">
-            <div>
-              <span className="eyebrow">Warnings</span>
-              <h2>Validation patterns</h2>
-            </div>
-          </div>
-          <div className="notice-stack">
-            <div className="notice notice--warning">
-              <strong>Incomplete profile</strong>
-              <p>Require a reachable base URL and a selected model before saving a provider profile.</p>
-            </div>
-            <div className="notice notice--info">
-              <strong>LM Studio compatibility</strong>
-              <p>Show endpoint examples and explain that local runtime performance depends on available memory.</p>
-            </div>
-          </div>
-        </article>
-      </section>
-    </section>
-  );
-};
-
-const AppShell = () => {
-  return (
-    <div className="shell">
-      <aside className="shell-sidebar">
-        <div className="brand-block">
-          <span className="brand-mark">LMCtrlF</span>
-          <p>Local document intelligence for long-form reading and grounded answers.</p>
-        </div>
-        <nav aria-label="Primary">
-          <ul className="nav-list">
-            {navigationItems.map((item) => (
-              <li key={item.to}>
-                <NavLink
-                  className={({ isActive }) => `nav-link${isActive ? " nav-link--active" : ""}`}
-                  to={item.to}
-                >
-                  {item.label}
-                </NavLink>
-              </li>
-            ))}
-          </ul>
-        </nav>
-      </aside>
-      <div className="shell-main">
-        <header className="shell-topbar">
-          <div>
-            <span className="eyebrow">Desktop App</span>
-            <h2>Assignment UI Preview</h2>
-          </div>
-          <div className="topbar-meta">
-            <span>Dark mode ready</span>
-            <span>Progress aware</span>
-          </div>
-        </header>
-        <Routes>
-          <Route path="/" element={<Navigate replace to="/documents" />} />
-          <Route path="/documents" element={<DocumentManagementPage />} />
-          <Route path="/chat" element={<ChatPage />} />
-          <Route path="/settings" element={<ConfigurationPage />} />
-        </Routes>
-      </div>
-    </div>
-  );
+const formatDocumentStatus = (document: ProjectDocument): string => {
+  return document.status === "Indexing"
+    ? `Indexing (${document.progress ?? 0}%)`
+    : document.status;
 };
 
 const App = () => {
+  const [view, setView] = useState<AppView>("projects");
+  const [projectList, setProjectList] = useState<ProjectSummary[]>(cloneProjects);
+  const [documentsByProject, setDocumentsByProject] =
+    useState<Record<string, ProjectDocument[]>>(cloneDocuments);
+  const [threadsByProject, setThreadsByProject] =
+    useState<Record<string, ChatThread[]>>(cloneThreads);
+  const [selectedProjectId, setSelectedProjectId] = useState(projects[0]?.id ?? "");
+  const [selectedThreadId, setSelectedThreadId] = useState(projectThreads[projects[0]?.id ?? ""]?.[0]?.id ?? "");
+  const [projectSeed, setProjectSeed] = useState(projects.length + 1);
+  const [providerList, setProviderList] = useState<ProviderDraft[]>(cloneProviders);
+  const [selectedProviderId, setSelectedProviderId] = useState(providerProfiles[0]?.id ?? "lm-studio");
+  const [accessibilityList, setAccessibilityList] =
+    useState<AccessibilityOption[]>(cloneAccessibility);
+  const [isCreateProjectDialogOpen, setIsCreateProjectDialogOpen] = useState(false);
+  const [pendingProjectName, setPendingProjectName] = useState("");
+  const [isWideChatLayout, setIsWideChatLayout] = useState(getIsWideChatLayout);
+  const [isThreadPanelOpen, setIsThreadPanelOpen] = useState(getIsWideChatLayout);
+
+  useEffect(() => {
+    const handleResize = () => {
+      setIsWideChatLayout(getIsWideChatLayout());
+    };
+
+    window.addEventListener("resize", handleResize);
+    return () => {
+      window.removeEventListener("resize", handleResize);
+    };
+  }, []);
+
+  const selectedProject =
+    projectList.find((project) => project.id === selectedProjectId) ?? projectList[0];
+  const selectedDocuments = selectedProject ? documentsByProject[selectedProject.id] ?? [] : [];
+  const selectedThreads = selectedProject ? threadsByProject[selectedProject.id] ?? [] : [];
+  const selectedThread = selectedThreads.find((thread) => thread.id === selectedThreadId) ?? selectedThreads[0];
+  const selectedProvider =
+    providerList.find((provider) => provider.id === selectedProviderId) ?? providerList[0];
+
+  const showTabs = view === "projects" || view === "settings";
+
+  const handleSelectTopLevel = (target: "projects" | "settings") => {
+    setView(target);
+  };
+
+  const handleOpenProject = (projectId: string = selectedProjectId) => {
+    const nextThreads = threadsByProject[projectId] ?? [];
+    setSelectedProjectId(projectId);
+    setSelectedThreadId(nextThreads[0]?.id ?? "");
+    setView("project-files");
+  };
+
+  const handleOpenCreateProjectDialog = () => {
+    setPendingProjectName("");
+    setIsCreateProjectDialogOpen(true);
+  };
+
+  const handleCloseCreateProjectDialog = () => {
+    setPendingProjectName("");
+    setIsCreateProjectDialogOpen(false);
+  };
+
+  const handleCreateProject = (projectName: string) => {
+    const name = projectName.trim();
+
+    if (!name) {
+      return;
+    }
+
+    const id = `project-${projectSeed}`;
+    const starterThread: ChatThread = {
+      id: `${id}-thread-1`,
+      title: "Getting started",
+      updatedAt: "Just now",
+      summary: "Capture your first questions after importing documents.",
+      messages: [
+        {
+          id: `${id}-message-1`,
+          role: "assistant",
+          content:
+            "This project is empty. Drag in PDFs or text files, then come back here to start a grounded conversation."
+        }
+      ]
+    };
+
+    setProjectList((current) => [
+      {
+        id,
+        name,
+        tagline: "A fresh workspace for new source material.",
+        accent: accentPalette[(projectSeed - 1) % accentPalette.length],
+        updatedAt: "Created just now",
+        shelfLabel: "New project"
+      },
+      ...current
+    ]);
+    setDocumentsByProject((current) => ({ ...current, [id]: [] }));
+    setThreadsByProject((current) => ({ ...current, [id]: [starterThread] }));
+    setSelectedProjectId(id);
+    setSelectedThreadId(starterThread.id);
+    setProjectSeed((current) => current + 1);
+    setIsCreateProjectDialogOpen(false);
+    setPendingProjectName("");
+    setView("project-files");
+  };
+
+  const handleDeleteDocument = (documentId: string) => {
+    if (!selectedProject) {
+      return;
+    }
+
+    setDocumentsByProject((current) => ({
+      ...current,
+      [selectedProject.id]: (current[selectedProject.id] ?? []).filter(
+        (document) => document.id !== documentId
+      )
+    }));
+  };
+
+  const handleReindexDocument = (documentId: string) => {
+    if (!selectedProject) {
+      return;
+    }
+
+    setDocumentsByProject((current) => ({
+      ...current,
+      [selectedProject.id]: (current[selectedProject.id] ?? []).map((document) =>
+        document.id === documentId
+          ? {
+              ...document,
+              status: "Queued",
+              progress: undefined
+            }
+          : document
+      )
+    }));
+  };
+
+  const handleSelectProjectView = (target: "project-files" | "project-chat") => {
+    if (!selectedProject) {
+      return;
+    }
+
+    const firstThread = threadsByProject[selectedProject.id]?.[0];
+    if (target === "project-chat") {
+      setSelectedThreadId((current) => current || firstThread?.id || "");
+      setIsThreadPanelOpen(isWideChatLayout);
+    }
+
+    setView(target);
+  };
+
+  const handleCreateThread = () => {
+    if (!selectedProject) {
+      return;
+    }
+
+    const nextCount = (threadsByProject[selectedProject.id] ?? []).length + 1;
+    const nextThread: ChatThread = {
+      id: `${selectedProject.id}-thread-${nextCount}`,
+      title: `New thread ${nextCount}`,
+      updatedAt: "Just now",
+      summary: "Use this space for a focused follow-up question.",
+      messages: [
+        {
+          id: `${selectedProject.id}-thread-${nextCount}-message-1`,
+          role: "assistant",
+          content:
+            "Ask for a summary, compare two files, or outline what still needs indexing before you trust the answer."
+        }
+      ]
+    };
+
+    setThreadsByProject((current) => ({
+      ...current,
+      [selectedProject.id]: [nextThread, ...(current[selectedProject.id] ?? [])]
+    }));
+    setSelectedThreadId(nextThread.id);
+  };
+
+  const handleToggleThreadPanel = () => {
+    setIsThreadPanelOpen((current) => !current);
+  };
+
+  const handleSelectThread = (threadId: string) => {
+    setSelectedThreadId(threadId);
+
+    if (!isWideChatLayout) {
+      setIsThreadPanelOpen(false);
+    }
+  };
+
+  const handleUpdateProviderField = (field: "baseUrl" | "model" | "apiKey", value: string) => {
+    setProviderList((current) =>
+      current.map((provider) =>
+        provider.id === selectedProviderId
+          ? {
+              ...provider,
+              [field]: value
+            }
+          : provider
+      )
+    );
+  };
+
+  const handleToggleAccessibility = (optionId: string) => {
+    setAccessibilityList((current) =>
+      current.map((option) =>
+        option.id === optionId
+          ? {
+              ...option,
+              enabled: !option.enabled
+            }
+          : option
+      )
+    );
+  };
+
+  const renderProjectsView = () => {
+    return (
+      <section className="projects-home">
+        <div className="projects-home__toolbar">
+          <button className="primary-action" onClick={handleOpenCreateProjectDialog} type="button">
+            Create Project
+          </button>
+        </div>
+
+        <div className="project-list" role="list" aria-label="Projects">
+          {projectList.map((project) => {
+            const count = documentsByProject[project.id]?.length ?? 0;
+
+            return (
+              <button
+                className="project-tile"
+                key={project.id}
+                onClick={() => handleOpenProject(project.id)}
+                style={{ "--project-accent": project.accent } as CSSProperties}
+                type="button"
+              >
+                <span className="project-tile__name">{project.name}</span>
+                <span className="project-tile__count">{count} files</span>
+              </button>
+            );
+          })}
+        </div>
+      </section>
+    );
+  };
+
+  const renderProjectView = () => {
+    if (!selectedProject) {
+      return null;
+    }
+
+    return (
+      <section className="project-page project-page--locked">
+        <header className="project-toolbar">
+          <button className="ghost-action" onClick={() => setView("projects")} type="button">
+            Back
+          </button>
+
+          <div className="project-toolbar__center">
+            <div className="project-toolbar__title">
+              <h1>{selectedProject.name}</h1>
+            </div>
+
+            <div className="project-tabs" aria-label="Project navigation">
+              <button
+                aria-pressed={view === "project-files"}
+                className={`project-tabs__button ${view === "project-files" ? "project-tabs__button--active" : ""}`}
+                onClick={() => handleSelectProjectView("project-files")}
+                type="button"
+              >
+                File management
+              </button>
+              <button
+                aria-pressed={view === "project-chat"}
+                className={`project-tabs__button ${view === "project-chat" ? "project-tabs__button--active" : ""}`}
+                onClick={() => handleSelectProjectView("project-chat")}
+                type="button"
+              >
+                Chat
+              </button>
+            </div>
+          </div>
+        </header>
+
+        <section className="project-body">
+          <section className="table-card table-card--scroll-shell">
+            <div className="file-management-toolbar">
+              <button className="secondary-action" type="button">
+                Import Files
+              </button>
+            </div>
+
+            <div className="table-wrapper table-wrapper--scroll">
+              <table className="file-table">
+                <thead>
+                  <tr>
+                    <th scope="col">File name</th>
+                    <th scope="col">Status</th>
+                    <th scope="col">Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {selectedDocuments.length > 0 ? (
+                    selectedDocuments.map((document) => (
+                      <tr key={document.id}>
+                        <td>{document.name}</td>
+                        <td>
+                          <span className={`status-pill status-pill--${document.status.toLowerCase().replaceAll(" ", "-")}`}>
+                            {formatDocumentStatus(document)}
+                          </span>
+                        </td>
+                        <td>
+                          <div className="table-actions">
+                            <button
+                              aria-label={`Delete ${document.name}`}
+                              className="ghost-action ghost-action--danger"
+                              onClick={() => handleDeleteDocument(document.id)}
+                              type="button"
+                            >
+                              Delete
+                            </button>
+                            <button
+                              aria-label={`Reindex ${document.name}`}
+                              className="ghost-action"
+                              onClick={() => handleReindexDocument(document.id)}
+                              type="button"
+                            >
+                              Reindex
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td className="empty-table" colSpan={3}>
+                        No documents yet. Import files to start building this project.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </section>
+      </section>
+    );
+  };
+
+  const renderChatView = () => {
+    if (!selectedProject || !selectedThread) {
+      return null;
+    }
+
+    return (
+      <section className="chat-page chat-page--locked">
+        <button
+          aria-expanded={isThreadPanelOpen}
+          className="ghost-action thread-toggle-fab"
+          onClick={handleToggleThreadPanel}
+          type="button"
+        >
+          Threads
+        </button>
+
+        <header className="project-toolbar">
+          <button className="ghost-action" onClick={() => setView("projects")} type="button">
+            Back
+          </button>
+
+          <div className="project-toolbar__title">
+            <h1>{selectedProject.name}</h1>
+          </div>
+
+          <div className="project-tabs" aria-label="Project navigation">
+            <button
+              aria-pressed={false}
+              className="project-tabs__button"
+              onClick={() => handleSelectProjectView("project-files")}
+              type="button"
+            >
+              File management
+            </button>
+            <button
+              aria-pressed
+              className="project-tabs__button project-tabs__button--active"
+              onClick={() => handleSelectProjectView("project-chat")}
+              type="button"
+            >
+              Chat
+            </button>
+          </div>
+        </header>
+
+        <div
+          className={`chat-layout ${!isWideChatLayout ? "chat-layout--compact" : ""} ${isWideChatLayout && !isThreadPanelOpen ? "chat-layout--expanded" : ""}`}
+        >
+          {isWideChatLayout && isThreadPanelOpen ? (
+            <aside className="thread-sidebar thread-sidebar--scroll-shell">
+              <div className="thread-sidebar__header">
+                <button
+                  className="secondary-action secondary-action--compact"
+                  onClick={handleCreateThread}
+                  type="button"
+                >
+                  New Thread
+                </button>
+              </div>
+
+              <div className="thread-list thread-list--scroll" role="list" aria-label="Project threads">
+                {selectedThreads.map((thread) => (
+                  <button
+                    aria-pressed={thread.id === selectedThread.id}
+                    className={`thread-item ${thread.id === selectedThread.id ? "thread-item--active" : ""}`}
+                    key={thread.id}
+                    onClick={() => handleSelectThread(thread.id)}
+                    type="button"
+                  >
+                    <span className="thread-item__title">{thread.title}</span>
+                  </button>
+                ))}
+              </div>
+            </aside>
+          ) : null}
+
+          <section className="conversation-panel conversation-panel--scroll-shell">
+            <header className="conversation-panel__header">
+              <div>
+                <h2>{selectedThread.title}</h2>
+              </div>
+            </header>
+
+            <div className="message-stream message-stream--scroll">
+              {selectedThread.messages.map((message) => (
+                <article
+                  className={`message-bubble message-bubble--${message.role}`}
+                  key={message.id}
+                >
+                  <p>{message.content}</p>
+                </article>
+              ))}
+            </div>
+
+            <footer className="composer-card">
+              <textarea
+                className="composer-card__input"
+                id="chat-composer"
+                placeholder="Summarize the files that still need reindexing."
+                rows={4}
+              />
+              <div className="composer-card__footer">
+                <span>Threads stay grouped by project.</span>
+                <button className="primary-action" type="button">
+                  Send
+                </button>
+              </div>
+            </footer>
+          </section>
+        </div>
+
+        {!isWideChatLayout && isThreadPanelOpen ? (
+          <div className="thread-drawer" role="dialog" aria-label="Thread drawer">
+            <button
+              aria-label="Close thread drawer"
+              className="thread-drawer__backdrop"
+              onClick={handleToggleThreadPanel}
+              type="button"
+            />
+            <aside className="thread-sidebar thread-sidebar--drawer thread-sidebar--scroll-shell">
+              <div className="thread-sidebar__header">
+                <button
+                  className="secondary-action secondary-action--compact"
+                  onClick={handleCreateThread}
+                  type="button"
+                >
+                  New Thread
+                </button>
+              </div>
+
+              <div className="thread-list thread-list--scroll" role="list" aria-label="Project threads">
+                {selectedThreads.map((thread) => (
+                  <button
+                    aria-pressed={thread.id === selectedThread.id}
+                    className={`thread-item ${thread.id === selectedThread.id ? "thread-item--active" : ""}`}
+                    key={thread.id}
+                    onClick={() => handleSelectThread(thread.id)}
+                    type="button"
+                  >
+                    <span className="thread-item__title">{thread.title}</span>
+                  </button>
+                ))}
+              </div>
+            </aside>
+          </div>
+        ) : null}
+      </section>
+    );
+  };
+
+  const renderSettingsView = () => {
+    if (!selectedProvider) {
+      return null;
+    }
+
+    return (
+      <section className="settings-page">
+        <section className="settings-card">
+          <h1>Model settings</h1>
+
+          <div className="settings-form">
+            <label className="form-field">
+              <span>Provider</span>
+              <select
+                onChange={(event) =>
+                  setSelectedProviderId(event.target.value as ProviderDraft["id"])
+                }
+                value={selectedProviderId}
+              >
+                {providerList.map((provider) => (
+                  <option key={provider.id} value={provider.id}>
+                    {provider.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="form-field">
+              <span>Base URL</span>
+              <input
+                onChange={(event) => handleUpdateProviderField("baseUrl", event.target.value)}
+                type="text"
+                value={selectedProvider.baseUrl}
+              />
+            </label>
+
+            <label className="form-field">
+              <span>Model</span>
+              <input
+                onChange={(event) => handleUpdateProviderField("model", event.target.value)}
+                type="text"
+                value={selectedProvider.model}
+              />
+            </label>
+
+            <label className="form-field">
+              <span>API key</span>
+              <input
+                onChange={(event) => handleUpdateProviderField("apiKey", event.target.value)}
+                type="password"
+                value={selectedProvider.apiKey}
+              />
+            </label>
+          </div>
+        </section>
+
+        <section className="settings-card">
+          <h1>Accessibility</h1>
+
+          <div className="switch-list">
+            {accessibilityList.map((option) => (
+              <label className="switch-row" key={option.id}>
+                <span className="switch-row__copy">
+                  <span className="switch-row__label">{option.label}</span>
+                  <span className="switch-row__description">{option.description}</span>
+                </span>
+                <span className="switch-control">
+                  <input
+                    checked={option.enabled}
+                    onChange={() => handleToggleAccessibility(option.id)}
+                    type="checkbox"
+                  />
+                  <span className="switch-control__track" />
+                </span>
+              </label>
+            ))}
+          </div>
+        </section>
+      </section>
+    );
+  };
+
   return (
-    <HashRouter>
-      <AppShell />
-    </HashRouter>
+    <main className={`workspace-shell ${showTabs ? "" : "workspace-shell--immersive"}`}>
+      {showTabs ? (
+        <>
+          <header className="top-tabs" aria-label="Primary navigation">
+            <button
+              aria-pressed={view === "projects"}
+              className={`top-tabs__button ${view === "projects" ? "top-tabs__button--active" : ""}`}
+              onClick={() => handleSelectTopLevel("projects")}
+              type="button"
+            >
+              Projects
+            </button>
+            <button
+              aria-pressed={view === "settings"}
+              className={`top-tabs__button ${view === "settings" ? "top-tabs__button--active" : ""}`}
+              onClick={() => handleSelectTopLevel("settings")}
+              type="button"
+            >
+              Settings
+            </button>
+          </header>
+
+          <section className="page-frame">
+            {view === "projects" ? renderProjectsView() : renderSettingsView()}
+          </section>
+        </>
+      ) : null}
+
+      {view === "project-files" ? renderProjectView() : null}
+      {view === "project-chat" ? renderChatView() : null}
+
+      {isCreateProjectDialogOpen ? (
+        <div className="dialog-backdrop" role="dialog" aria-modal="true" aria-labelledby="create-project-title">
+          <div className="dialog-card">
+            <button
+              aria-label="Close create project dialog"
+              className="dialog-close"
+              onClick={handleCloseCreateProjectDialog}
+              type="button"
+            >
+              x
+            </button>
+
+            <h2 className="dialog-title" id="create-project-title">
+              Create Project
+            </h2>
+
+            <label className="form-field" htmlFor="project-name">
+              <span>Project name</span>
+              <input
+                autoFocus
+                id="project-name"
+                onChange={(event) => setPendingProjectName(event.target.value)}
+                type="text"
+                value={pendingProjectName}
+              />
+            </label>
+
+            <div className="dialog-actions">
+              <button
+                className="primary-action"
+                disabled={pendingProjectName.trim().length === 0}
+                onClick={() => handleCreateProject(pendingProjectName)}
+                type="button"
+              >
+                Create
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </main>
   );
 };
 
