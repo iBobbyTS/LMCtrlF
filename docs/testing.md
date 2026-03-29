@@ -16,7 +16,10 @@
 ### Desktop Package
 
 - desktop runtime config resolves fallback values correctly
-- renderer shell renders the expected heading and backend URL
+- renderer shell renders the document management page by default
+- renderer shell exposes navigation for document, chat, and settings routes
+- chat route placeholder renders through the shared shell
+- initial renderer load does not trigger backend fetch calls
 
 ## Local Commands
 

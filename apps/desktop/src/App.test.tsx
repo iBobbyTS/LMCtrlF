@@ -1,41 +1,35 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 
 import App from "./App";
 
 describe("App", () => {
-  it("renders the default connection button", () => {
+  it("renders the document management page by default", async () => {
+    globalThis.fetch = vi.fn();
+
     render(<App />);
 
-    expect(screen.getByRole("button", { name: "Test Python Connection" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Document Control Center" })).toBeInTheDocument();
+    expect(screen.getByText("Drop PDF or TXT files here")).toBeInTheDocument();
+    expect(screen.getByText("Privacy Notice")).toBeInTheDocument();
+    expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 
-  it("shows a success state when the backend is reachable", async () => {
-    window.lmctrlf = {
-      getBackendBaseUrl: () => "http://127.0.0.1:8123"
-    };
-    globalThis.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({ status: "ok" })
-    } as Response);
-
+  it("shows the desktop navigation shell", async () => {
     render(<App />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Test Python Connection" }));
-
-    await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Success" })).toHaveClass("connection-button--success");
-    });
+    expect(await screen.findByRole("link", { name: "Documents" })).toHaveClass("nav-link--active");
+    expect(screen.getByRole("link", { name: "Chat" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Settings" })).toBeInTheDocument();
   });
 
-  it("shows a fail state when the backend check fails", async () => {
-    globalThis.fetch = vi.fn().mockRejectedValue(new Error("network error"));
-
+  it("navigates to the chat placeholder route", async () => {
     render(<App />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Test Python Connection" }));
+    fireEvent.click(await screen.findByRole("link", { name: "Chat" }));
 
-    await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Fail" })).toHaveClass("connection-button--fail");
-    });
+    expect(await screen.findByRole("heading", { name: "Chat Workspace" })).toBeInTheDocument();
+    expect(
+      screen.getByText("The chat page will be added in the next branch on top of this shell.")
+    ).toBeInTheDocument();
   });
 });

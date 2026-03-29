@@ -31,11 +31,14 @@ The current implementation provides:
 - a shared contract package
 - a backend `/health` endpoint
 - an Electron shell with preload access to the backend base URL
-- a React renderer shell prepared for a connection smoke-test screen
+- a React renderer with a desktop navigation shell
+- a high-fidelity document management page
+- placeholder routes for chat and configuration pages
 
 The repository does not yet include:
 
-- document ingestion
+- real document ingestion
 - indexing
 - vector storage integration
-- chat workflows
+- live chat workflows
+- persistent settings storage
