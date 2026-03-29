@@ -1,6 +1,16 @@
 import { HashRouter, NavLink, Navigate, Route, Routes } from "react-router-dom";
 
-import { chatMessages, citations, documents, importJobs, projects } from "./mockData";
+import {
+  accessibilityOptions,
+  chatMessages,
+  citations,
+  cloudProfiles,
+  documents,
+  hardwareTiers,
+  importJobs,
+  localProfiles,
+  projects
+} from "./mockData";
 import "./styles.css";
 
 const navigationItems = [
@@ -290,6 +300,151 @@ const ChatPage = () => {
   );
 };
 
+const ConfigurationPage = () => {
+  return (
+    <section className="page-layout" aria-labelledby="settings-heading">
+      <header className="page-hero page-hero--compact">
+        <div>
+          <span className="eyebrow">Provider Setup</span>
+          <h1 id="settings-heading">Configuration Center</h1>
+          <p>
+            Prepare local and cloud model settings, review hardware expectations, and keep desktop
+            accessibility controls visible before any real integrations are added.
+          </p>
+        </div>
+        <div className="hero-badges">
+          <span>Local + cloud</span>
+          <span>Accessibility aware</span>
+        </div>
+      </header>
+
+      <section className="settings-layout">
+        <article className="panel panel--wide">
+          <div className="panel-header">
+            <div>
+              <span className="eyebrow">Providers</span>
+              <h2>Runtime connections</h2>
+            </div>
+            <span className="panel-meta">Mock form only</span>
+          </div>
+          <div className="provider-grid">
+            <section className="provider-column">
+              <div className="provider-column-header">
+                <strong>Local runtimes</strong>
+                <p>Prioritize LM Studio-compatible local endpoints for offline workflows.</p>
+              </div>
+              {localProfiles.map((profile) => (
+                <article key={profile.name} className="provider-card">
+                  <div className="provider-card-top">
+                    <strong>{profile.name}</strong>
+                    <span>{profile.status}</span>
+                  </div>
+                  <label>
+                    Base URL
+                    <input readOnly value={profile.baseUrl} />
+                  </label>
+                  <label>
+                    Model
+                    <input readOnly value={profile.model} />
+                  </label>
+                  <p>{profile.note}</p>
+                </article>
+              ))}
+            </section>
+
+            <section className="provider-column">
+              <div className="provider-column-header">
+                <strong>Cloud providers</strong>
+                <p>Use OpenAI-compatible endpoints when internet access and credentials are available.</p>
+              </div>
+              {cloudProfiles.map((profile) => (
+                <article key={profile.name} className="provider-card">
+                  <div className="provider-card-top">
+                    <strong>{profile.name}</strong>
+                    <span>{profile.status}</span>
+                  </div>
+                  <label>
+                    Endpoint
+                    <input readOnly value={profile.baseUrl} />
+                  </label>
+                  <label>
+                    API Key
+                    <input readOnly value={profile.apiKeyPreview} />
+                  </label>
+                  <label>
+                    Model
+                    <input readOnly value={profile.model} />
+                  </label>
+                  <p>{profile.note}</p>
+                </article>
+              ))}
+            </section>
+          </div>
+        </article>
+
+        <article className="panel">
+          <div className="panel-header">
+            <div>
+              <span className="eyebrow">Guidance</span>
+              <h2>Hardware expectations</h2>
+            </div>
+          </div>
+          <ul className="tier-list">
+            {hardwareTiers.map((tier) => (
+              <li key={tier.title} className="tier-card">
+                <strong>{tier.title}</strong>
+                <span>{tier.memory}</span>
+                <p>{tier.description}</p>
+              </li>
+            ))}
+          </ul>
+        </article>
+
+        <article className="panel">
+          <div className="panel-header">
+            <div>
+              <span className="eyebrow">Accessibility</span>
+              <h2>Experience controls</h2>
+            </div>
+          </div>
+          <ul className="accessibility-list">
+            {accessibilityOptions.map((option) => (
+              <li key={option.name} className="accessibility-item">
+                <div>
+                  <strong>{option.name}</strong>
+                  <p>{option.description}</p>
+                </div>
+                <span className={`toggle-pill toggle-pill--${option.state.toLowerCase()}`}>
+                  {option.state}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </article>
+
+        <article className="panel">
+          <div className="panel-header">
+            <div>
+              <span className="eyebrow">Warnings</span>
+              <h2>Validation patterns</h2>
+            </div>
+          </div>
+          <div className="notice-stack">
+            <div className="notice notice--warning">
+              <strong>Incomplete profile</strong>
+              <p>Require a reachable base URL and a selected model before saving a provider profile.</p>
+            </div>
+            <div className="notice notice--info">
+              <strong>LM Studio compatibility</strong>
+              <p>Show endpoint examples and explain that local runtime performance depends on available memory.</p>
+            </div>
+          </div>
+        </article>
+      </section>
+    </section>
+  );
+};
+
 const AppShell = () => {
   return (
     <div className="shell">
@@ -328,15 +483,7 @@ const AppShell = () => {
           <Route path="/" element={<Navigate replace to="/documents" />} />
           <Route path="/documents" element={<DocumentManagementPage />} />
           <Route path="/chat" element={<ChatPage />} />
-          <Route
-            path="/settings"
-            element={
-              <PlaceholderPage
-                title="Configuration Center"
-                description="The configuration page will be added after the chat page branch."
-              />
-            }
-          />
+          <Route path="/settings" element={<ConfigurationPage />} />
         </Routes>
       </div>
     </div>

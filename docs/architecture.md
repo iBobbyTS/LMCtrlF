@@ -34,7 +34,7 @@ The current implementation provides:
 - a React renderer with a desktop navigation shell
 - a high-fidelity document management page
 - a high-fidelity chat page with mock conversation and citation panels
-- a placeholder route for the configuration page
+- a high-fidelity configuration page with local/cloud provider mockups
 
 The repository does not yet include:
 

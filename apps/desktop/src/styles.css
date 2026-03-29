@@ -583,6 +583,135 @@ textarea {
   gap: 18px;
 }
 
+.settings-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) 360px;
+  gap: 18px;
+}
+
+.provider-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.provider-column {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.provider-column-header strong {
+  display: block;
+  font-size: 1rem;
+}
+
+.provider-column-header p {
+  margin: 8px 0 0;
+  color: #4b6681;
+  line-height: 1.6;
+}
+
+.provider-card,
+.tier-card,
+.accessibility-item {
+  padding: 18px;
+  border-radius: 18px;
+  background: #f7fbff;
+}
+
+.provider-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.provider-card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.provider-card-top span {
+  padding: 8px 10px;
+  border-radius: 999px;
+  background: rgba(59, 130, 246, 0.12);
+  color: #1d4ed8;
+  font-size: 0.8rem;
+  font-weight: 800;
+}
+
+.provider-card label {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  color: #36506a;
+  font-weight: 700;
+}
+
+.provider-card input {
+  padding: 12px 14px;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 14px;
+  background: white;
+  color: #102033;
+}
+
+.provider-card p,
+.tier-card p,
+.accessibility-item p {
+  margin: 0;
+  color: #48627e;
+  line-height: 1.6;
+}
+
+.tier-list,
+.accessibility-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 12px;
+}
+
+.tier-card strong,
+.accessibility-item strong {
+  display: block;
+}
+
+.tier-card span {
+  display: inline-block;
+  margin: 8px 0 10px;
+  color: #0f6d92;
+  font-weight: 800;
+}
+
+.accessibility-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.toggle-pill {
+  display: inline-flex;
+  padding: 8px 10px;
+  border-radius: 999px;
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.toggle-pill--enabled {
+  background: rgba(34, 197, 94, 0.16);
+  color: #166534;
+}
+
+.toggle-pill--planned {
+  background: rgba(245, 158, 11, 0.18);
+  color: #9a5700;
+}
+
 .citation-list {
   list-style: none;
   margin: 0;
@@ -632,7 +761,9 @@ textarea {
 
   .summary-grid,
   .content-grid,
-  .chat-layout {
+  .chat-layout,
+  .settings-layout,
+  .provider-grid {
     grid-template-columns: 1fr;
   }
 
@@ -656,7 +787,9 @@ textarea {
   .panel-header,
   .project-card,
   .job-item,
-  .composer-footer {
+  .composer-footer,
+  .provider-card-top,
+  .accessibility-item {
     flex-direction: column;
   }
 

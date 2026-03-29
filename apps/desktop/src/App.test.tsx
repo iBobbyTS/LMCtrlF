@@ -33,4 +33,15 @@ describe("App", () => {
     expect(screen.getByText("Model responses may be inaccurate")).toBeInTheDocument();
     expect(globalThis.fetch).not.toHaveBeenCalled();
   });
+
+  it("navigates to the configuration route", async () => {
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("link", { name: "Settings" }));
+
+    expect(await screen.findByRole("heading", { name: "Configuration Center" })).toBeInTheDocument();
+    expect(screen.getByText("LM Studio")).toBeInTheDocument();
+    expect(screen.getByText("Dark Mode")).toBeInTheDocument();
+    expect(screen.getByText("Incomplete profile")).toBeInTheDocument();
+  });
 });

@@ -19,6 +19,7 @@
 - renderer shell renders the document management page by default
 - renderer shell exposes navigation for document, chat, and settings routes
 - chat route renders the mock conversation workspace through the shared shell
+- settings route renders local/cloud configuration mockups through the shared shell
 - initial renderer load does not trigger backend fetch calls
 
 ## Local Commands

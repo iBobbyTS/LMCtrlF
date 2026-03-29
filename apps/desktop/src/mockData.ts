@@ -113,3 +113,75 @@ export const citations = [
       "The application should warn users that the LLM is not always correct and that the original document should be checked."
   }
 ];
+
+export const localProfiles = [
+  {
+    name: "LM Studio",
+    status: "Preferred",
+    baseUrl: "http://127.0.0.1:1234/v1",
+    model: "qwen2.5-7b-instruct",
+    note: "Recommended for local-first testing with an OpenAI-compatible endpoint."
+  },
+  {
+    name: "Offline Classroom Runtime",
+    status: "Draft",
+    baseUrl: "http://localhost:8008/v1",
+    model: "mistral-small",
+    note: "Use only when the machine has sufficient memory and GPU resources."
+  }
+];
+
+export const cloudProfiles = [
+  {
+    name: "OpenAI-Compatible Cloud",
+    status: "Connected",
+    baseUrl: "https://api.example-provider.com/v1",
+    apiKeyPreview: "sk-••••••••••••",
+    model: "gpt-4.1-mini",
+    note: "Best for consistent latency and stronger responses when internet access is available."
+  },
+  {
+    name: "Budget Research Endpoint",
+    status: "Needs Review",
+    baseUrl: "https://api.alt-models.dev/v1",
+    apiKeyPreview: "rk-••••••••••••",
+    model: "deepseek-v3.2",
+    note: "Lower cost, but model availability and usage terms should be reviewed carefully."
+  }
+];
+
+export const hardwareTiers = [
+  {
+    title: "Minimum Local Setup",
+    memory: "8GB GPU memory",
+    description: "Suitable for small local models, with slower indexing and answer quality trade-offs."
+  },
+  {
+    title: "Comfortable Desktop Setup",
+    memory: "16GB to 32GB memory",
+    description: "Supports stronger local models and more responsive document workflows."
+  },
+  {
+    title: "High-Performance Setup",
+    memory: "32GB+ unified or GPU memory",
+    description: "Best choice for larger local models and sustained document indexing workloads."
+  }
+];
+
+export const accessibilityOptions = [
+  {
+    name: "Dark Mode",
+    description: "Keep extended reading sessions comfortable and maintain contrast in low-light environments.",
+    state: "Enabled"
+  },
+  {
+    name: "Text to Speech",
+    description: "Reserved for future voice playback of answers and highlighted source text.",
+    state: "Planned"
+  },
+  {
+    name: "Tooltip Guidance",
+    description: "Surface contextual explanations for import steps, provider setup, and warnings.",
+    state: "Enabled"
+  }
+];
