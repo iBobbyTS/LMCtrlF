@@ -23,13 +23,14 @@ describe("App", () => {
   });
 
   it("navigates to the chat placeholder route", async () => {
+    globalThis.fetch = vi.fn();
+
     render(<App />);
 
     fireEvent.click(await screen.findByRole("link", { name: "Chat" }));
 
-    expect(await screen.findByRole("heading", { name: "Chat Workspace" })).toBeInTheDocument();
-    expect(
-      screen.getByText("The chat page will be added in the next branch on top of this shell.")
-    ).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Grounded Chat Review" })).toBeInTheDocument();
+    expect(screen.getByText("Model responses may be inaccurate")).toBeInTheDocument();
+    expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 });

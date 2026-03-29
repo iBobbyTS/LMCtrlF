@@ -33,7 +33,8 @@ The current implementation provides:
 - an Electron shell with preload access to the backend base URL
 - a React renderer with a desktop navigation shell
 - a high-fidelity document management page
-- placeholder routes for chat and configuration pages
+- a high-fidelity chat page with mock conversation and citation panels
+- a placeholder route for the configuration page
 
 The repository does not yet include:
 

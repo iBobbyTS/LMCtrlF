@@ -64,3 +64,52 @@ export const importJobs = [
     progress: 100
   }
 ];
+
+export const chatMessages = [
+  {
+    id: "m1",
+    role: "User",
+    content: "Summarize the required desktop pages defined by the assignment materials."
+  },
+  {
+    id: "m2",
+    role: "Assistant",
+    content:
+      "The assignment material defines three primary desktop pages: document management, chat, and configuration. The document and configuration pages support import and provider setup, while the chat page is the main question-answering surface."
+  },
+  {
+    id: "m3",
+    role: "User",
+    content: "What guidance should the app show about response quality?"
+  },
+  {
+    id: "m4",
+    role: "Assistant",
+    content:
+      "The interface should remind users that LLM responses are not always correct and that the original document should be checked for the most accurate answer."
+  }
+];
+
+export const citations = [
+  {
+    id: "c1",
+    title: "System Features",
+    source: "Assignment1_ENSF400_L02_Group01.md",
+    snippet:
+      "The user interface must contain three main pages: document/project management, chat, and configurations."
+  },
+  {
+    id: "c2",
+    title: "Usability and Progress Display",
+    source: "Assignment1_ENSF400_L02_Group01.md",
+    snippet:
+      "The system should show indexing, searching, and response progress, and help users understand what the application is doing."
+  },
+  {
+    id: "c3",
+    title: "Accuracy Requirement",
+    source: "Assignment1_ENSF400_L02_Group01.md",
+    snippet:
+      "The application should warn users that the LLM is not always correct and that the original document should be checked."
+  }
+];

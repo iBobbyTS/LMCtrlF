@@ -1,6 +1,6 @@
 import { HashRouter, NavLink, Navigate, Route, Routes } from "react-router-dom";
 
-import { documents, importJobs, projects } from "./mockData";
+import { chatMessages, citations, documents, importJobs, projects } from "./mockData";
 import "./styles.css";
 
 const navigationItems = [
@@ -183,6 +183,113 @@ const PlaceholderPage = ({ title, description }: { title: string; description: s
   );
 };
 
+const ChatPage = () => {
+  return (
+    <section className="page-layout" aria-labelledby="chat-heading">
+      <header className="page-hero page-hero--compact">
+        <div>
+          <span className="eyebrow">Query Workspace</span>
+          <h1 id="chat-heading">Grounded Chat Review</h1>
+          <p>
+            Ask questions about imported material, inspect cited evidence, and keep the source
+            context visible while drafting answers.
+          </p>
+        </div>
+        <div className="hero-badges">
+          <span>Context-aware</span>
+          <span>Citation-first</span>
+        </div>
+      </header>
+
+      <section className="chat-layout">
+        <article className="panel chat-panel">
+          <div className="panel-header">
+            <div>
+              <span className="eyebrow">Conversation</span>
+              <h2>Answer drafting workspace</h2>
+            </div>
+            <span className="panel-meta">Project: Software Design Course</span>
+          </div>
+          <div className="context-banner">
+            <strong>Focused documents</strong>
+            <p>
+              Assignment3_ENSF400_L02_Group01.pdf and Course_Project_Rubric.txt are pinned for the
+              current session.
+            </p>
+          </div>
+          <div className="message-thread" aria-label="Chat transcript">
+            {chatMessages.map((message) => (
+              <article
+                key={message.id}
+                className={`message-bubble message-bubble--${message.role.toLowerCase()}`}
+              >
+                <span className="message-role">{message.role}</span>
+                <p>{message.content}</p>
+              </article>
+            ))}
+          </div>
+          <div className="composer-card">
+            <label className="composer-label" htmlFor="chat-input">
+              Ask a follow-up question
+            </label>
+            <textarea
+              id="chat-input"
+              className="composer-input"
+              defaultValue="What are the three required desktop pages and which one has the highest implementation priority?"
+            />
+            <div className="composer-footer">
+              <span>Response progress and streaming states will appear here later.</span>
+              <button className="ghost-button" type="button">
+                Send
+              </button>
+            </div>
+          </div>
+        </article>
+
+        <aside className="chat-sidebar">
+          <article className="panel">
+            <div className="panel-header">
+              <div>
+                <span className="eyebrow">Evidence</span>
+                <h2>Referenced passages</h2>
+              </div>
+              <span className="panel-meta">Top matches</span>
+            </div>
+            <ul className="citation-list">
+              {citations.map((citation) => (
+                <li key={citation.id} className="citation-card">
+                  <strong>{citation.title}</strong>
+                  <span>{citation.source}</span>
+                  <p>{citation.snippet}</p>
+                </li>
+              ))}
+            </ul>
+          </article>
+
+          <article className="panel">
+            <div className="panel-header">
+              <div>
+                <span className="eyebrow">Safety</span>
+                <h2>Answer accuracy</h2>
+              </div>
+            </div>
+            <div className="notice-stack">
+              <div className="notice notice--warning">
+                <strong>Model responses may be inaccurate</strong>
+                <p>Always verify the original source text before finalizing a conclusion.</p>
+              </div>
+              <div className="notice notice--info">
+                <strong>Progress visibility</strong>
+                <p>Search, retrieval, and response progress should remain visible during long tasks.</p>
+              </div>
+            </div>
+          </article>
+        </aside>
+      </section>
+    </section>
+  );
+};
+
 const AppShell = () => {
   return (
     <div className="shell">
@@ -220,15 +327,7 @@ const AppShell = () => {
         <Routes>
           <Route path="/" element={<Navigate replace to="/documents" />} />
           <Route path="/documents" element={<DocumentManagementPage />} />
-          <Route
-            path="/chat"
-            element={
-              <PlaceholderPage
-                title="Chat Workspace"
-                description="The chat page will be added in the next branch on top of this shell."
-              />
-            }
-          />
+          <Route path="/chat" element={<ChatPage />} />
           <Route
             path="/settings"
             element={
