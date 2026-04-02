@@ -8,7 +8,6 @@ The repository is organized as a lightweight monorepo:
 - `packages/shared`: shared frontend/backend contracts
 - `services/backend`: FastAPI sidecar
 - `docs`: project documentation
-- `.skill`: project-local workflow notes
 
 ## Runtime Overview
 
