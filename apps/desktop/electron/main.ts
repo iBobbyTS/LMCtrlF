@@ -11,8 +11,10 @@ const createWindow = async (): Promise<void> => {
   const rendererEntry = resolveRendererEntry(process.env.LMCTRLF_RENDERER_URL);
 
   const window = new BrowserWindow({
-    width: 1024,
-    height: 768,
+    width: 1280,
+    height: 840,
+    minWidth: 1280,
+    minHeight: 720,
     webPreferences: {
       preload: new URL("./preload.js", import.meta.url).pathname,
       additionalArguments: [`--backend-base-url=${backendBaseUrl}`]

@@ -8,7 +8,6 @@ The repository is organized as a lightweight monorepo:
 - `packages/shared`: shared frontend/backend contracts
 - `services/backend`: FastAPI sidecar
 - `docs`: project documentation
-- `.skill`: project-local workflow notes
 
 ## Runtime Overview
 
@@ -23,6 +22,7 @@ During development:
 - the renderer runs through Vite
 - the Electron main process reads the renderer URL from `LMCTRLF_RENDERER_URL`
 - the Electron main process starts the Python sidecar locally unless `LMCTRLF_BACKEND_URL` is already provided
+- the desktop window keeps a minimum width large enough to preserve the project chat header layout
 
 ## Current Scope
 
@@ -31,11 +31,30 @@ The current implementation provides:
 - a shared contract package
 - a backend `/health` endpoint
 - an Electron shell with preload access to the backend base URL
-- a React renderer shell prepared for a connection smoke-test screen
+- a Projects home screen with a create-project dialog and direct project cards
+- a project workspace with two focused surfaces: `File management` and `Chat`
+- a file-management view that locks page scrolling and keeps overflow inside the table region
+- a chat view with a floating `Threads` button that controls a pinned panel on wide layouts, a temporary drawer on narrow layouts, and internal-only scrolling for threads and messages
+- a simplified Settings surface for provider selection and accessibility toggles
+
+## Renderer Behavior
+
+The renderer currently operates as a front-end prototype backed by local mock data.
+
+The top-level UI exposes two primary tabs:
+
+- `Projects`
+- `Settings`
+
+Inside a project, the top-level tabs are replaced by focused project surfaces:
+
+- `File management`
+- `Chat`
 
 The repository does not yet include:
 
-- document ingestion
-- indexing
+- real document ingestion
+- indexing execution
 - vector storage integration
-- chat workflows
+- live chat requests
+- persisted settings or provider secrets
