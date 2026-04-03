@@ -79,6 +79,7 @@ const App = () => {
   const [isThreadPanelOpen, setIsThreadPanelOpen] = useState(getIsWideChatLayout);
   const [isDragging, setIsDragging] = useState(false);
   const [files, setFiles] = useState<File[]>([]);
+  const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
 
 
   useEffect(() => {
@@ -281,6 +282,55 @@ const App = () => {
           : option
       )
     );
+  };
+
+  const handleImportFiles = () => {
+    if (!selectedProject || files.length === 0) return;
+
+    files.forEach((file) => {
+      const newDocument: ProjectDocument = {
+        id: `${selectedProject.id}-doc-${Date.now()}-${file.name}`,
+        name: file.name,
+        status: "Queued",
+        progress: 0
+      };
+
+      // Add to project
+      setDocumentsByProject((current) => ({
+        ...current,
+        [selectedProject.id]: [
+          newDocument,
+          ...(current[selectedProject.id] ?? [])
+        ]
+      }));
+
+      // Simulate indexing
+      setTimeout(() => {
+        setDocumentsByProject((current) => ({
+          ...current,
+          [selectedProject.id]: current[selectedProject.id].map((doc) =>
+            doc.id === newDocument.id
+              ? { ...doc, status: "Indexing", progress: 50 }
+              : doc
+          )
+        }));
+      }, 1000);
+
+      setTimeout(() => {
+        setDocumentsByProject((current) => ({
+          ...current,
+          [selectedProject.id]: current[selectedProject.id].map((doc) =>
+            doc.id === newDocument.id
+              ? { ...doc, status: "Ready", progress: undefined }
+              : doc
+          )
+        }));
+      }, 2500);
+    });
+
+    // Clear selected files after import
+    setFiles([]);
+    setView("project-files");
   };
 
   const renderProjectsView = () => {
@@ -688,55 +738,6 @@ const App = () => {
       processFiles(e.target.files);
     };
 
-    const handleImportFiles = () => {
-      if (!selectedProject || files.length === 0) return;
-
-      files.forEach((file) => {
-        const newDocument: ProjectDocument = {
-          id: `${selectedProject.id}-doc-${Date.now()}-${file.name}`,
-          name: file.name,
-          status: "Queued",
-          progress: 0
-        };
-
-        // Add to project
-        setDocumentsByProject((current) => ({
-          ...current,
-          [selectedProject.id]: [
-            newDocument,
-            ...(current[selectedProject.id] ?? [])
-          ]
-        }));
-
-        // Simulate indexing
-        setTimeout(() => {
-          setDocumentsByProject((current) => ({
-            ...current,
-            [selectedProject.id]: current[selectedProject.id].map((doc) =>
-              doc.id === newDocument.id
-                ? { ...doc, status: "Indexing", progress: 50 }
-                : doc
-            )
-          }));
-        }, 1000);
-
-        setTimeout(() => {
-          setDocumentsByProject((current) => ({
-            ...current,
-            [selectedProject.id]: current[selectedProject.id].map((doc) =>
-              doc.id === newDocument.id
-                ? { ...doc, status: "Ready", progress: undefined }
-                : doc
-            )
-          }));
-        }, 2500);
-      });
-
-      // Clear selected files after import
-      setFiles([]);
-      setView("project-files");
-    };
-
     const handleRemoveFile = (indexToRemove: number) => {
       setFiles((prev) => prev.filter((_, index) => index !== indexToRemove));
     };
@@ -811,8 +812,8 @@ const App = () => {
           </div>
 
           <div className="import-btn-container">
-              <button className="ghost-action"
-              onClick={handleImportFiles}
+              <button className="primary-action"
+              onClick={() => setIsImportDialogOpen(true)}
               disabled={files.length === 0}
               type="button">
                 Import
@@ -892,6 +893,60 @@ const App = () => {
                 type="button"
               >
                 Create
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {isImportDialogOpen ? (
+        <div
+          className="dialog-backdrop"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="import-warning-title"
+        >
+          <div className="dialog-card">
+            <button
+              aria-label="Close import dialog"
+              className="dialog-close"
+              onClick={() => setIsImportDialogOpen(false)}
+              type="button"
+            >
+              x
+            </button>
+
+            <h2 className="dialog-title" id="import-warning-title">
+              WARNING
+            </h2>
+
+            <p className="dialog-text">
+              The uploaded documents may be processed by a Large Language Model (LLM).
+              This may involve sending data to external services.
+            </p>
+
+            <p className="dialog-text dialog-text--warning">
+              Do NOT upload sensitive or personal information.
+            </p>
+
+            <div className="dialog-actions">
+              <button
+                className="ghost-action"
+                onClick={() => setIsImportDialogOpen(false)}
+                type="button"
+              >
+                Cancel
+              </button>
+
+              <button
+                className="primary-action"
+                onClick={() => {
+                  handleImportFiles();
+                  setIsImportDialogOpen(false);
+                }}
+                type="button"
+              >
+                I Understand & Import
               </button>
             </div>
           </div>

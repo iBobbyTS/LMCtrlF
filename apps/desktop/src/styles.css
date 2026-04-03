@@ -874,3 +874,7 @@ button {
 .file-remove-btn:hover {
   color: #ff4d4f; /* red on hover */
 }
+
+#import-warning-title{
+  text-align: center;
+}
