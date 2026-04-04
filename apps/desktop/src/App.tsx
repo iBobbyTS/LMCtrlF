@@ -14,7 +14,7 @@ import {
 } from "./mockData";
 import "./styles.css";
 
-type AppView = "projects" | "settings" | "project-files" | "project-chat";
+type AppView = "projects" | "settings" | "project-files" | "project-chat" | "project-import";
 
 const accentPalette = ["#c2410c", "#14532d", "#1d4ed8", "#7c2d12", "#0f766e"];
 const chatDrawerBreakpoint = 1180;
@@ -60,8 +60,10 @@ const formatDocumentStatus = (document: ProjectDocument): string => {
 const App = () => {
   const [view, setView] = useState<AppView>("projects");
   const [projectList, setProjectList] = useState<ProjectSummary[]>(cloneProjects);
-  const [documentsByProject, setDocumentsByProject] =
-    useState<Record<string, ProjectDocument[]>>(cloneDocuments);
+  const [documentsByProject, setDocumentsByProject] = useState<Record<string, ProjectDocument[]>>(() => {
+    const saved = localStorage.getItem("documentsByProject");
+    return saved ? JSON.parse(saved) : cloneDocuments();
+  });
   const [threadsByProject, setThreadsByProject] =
     useState<Record<string, ChatThread[]>>(cloneThreads);
   const [selectedProjectId, setSelectedProjectId] = useState(projects[0]?.id ?? "");
@@ -75,6 +77,10 @@ const App = () => {
   const [pendingProjectName, setPendingProjectName] = useState("");
   const [isWideChatLayout, setIsWideChatLayout] = useState(getIsWideChatLayout);
   const [isThreadPanelOpen, setIsThreadPanelOpen] = useState(getIsWideChatLayout);
+  const [isDragging, setIsDragging] = useState(false);
+  const [files, setFiles] = useState<File[]>([]);
+  const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
+
 
   useEffect(() => {
     const handleResize = () => {
@@ -86,6 +92,10 @@ const App = () => {
       window.removeEventListener("resize", handleResize);
     };
   }, []);
+
+  useEffect(() => {
+    localStorage.setItem("documentsByProject", JSON.stringify(documentsByProject));
+  }, [documentsByProject]);
 
   const selectedProject =
     projectList.find((project) => project.id === selectedProjectId) ?? projectList[0];
@@ -194,7 +204,7 @@ const App = () => {
     }));
   };
 
-  const handleSelectProjectView = (target: "project-files" | "project-chat") => {
+  const handleSelectProjectView = (target: "project-files" | "project-chat" | "project-import") => {
     if (!selectedProject) {
       return;
     }
@@ -274,6 +284,55 @@ const App = () => {
     );
   };
 
+  const handleImportFiles = () => {
+    if (!selectedProject || files.length === 0) return;
+
+    files.forEach((file) => {
+      const newDocument: ProjectDocument = {
+        id: `${selectedProject.id}-doc-${Date.now()}-${file.name}`,
+        name: file.name,
+        status: "Queued",
+        progress: 0
+      };
+
+      // Add to project
+      setDocumentsByProject((current) => ({
+        ...current,
+        [selectedProject.id]: [
+          newDocument,
+          ...(current[selectedProject.id] ?? [])
+        ]
+      }));
+
+      // Simulate indexing
+      setTimeout(() => {
+        setDocumentsByProject((current) => ({
+          ...current,
+          [selectedProject.id]: current[selectedProject.id].map((doc) =>
+            doc.id === newDocument.id
+              ? { ...doc, status: "Indexing", progress: 50 }
+              : doc
+          )
+        }));
+      }, 1000);
+
+      setTimeout(() => {
+        setDocumentsByProject((current) => ({
+          ...current,
+          [selectedProject.id]: current[selectedProject.id].map((doc) =>
+            doc.id === newDocument.id
+              ? { ...doc, status: "Ready", progress: undefined }
+              : doc
+          )
+        }));
+      }, 2500);
+    });
+
+    // Clear selected files after import
+    setFiles([]);
+    setView("project-files");
+  };
+
   const renderProjectsView = () => {
     return (
       <section className="projects-home">
@@ -346,7 +405,8 @@ const App = () => {
         <section className="project-body">
           <section className="table-card table-card--scroll-shell">
             <div className="file-management-toolbar">
-              <button className="secondary-action" type="button">
+              <button className="secondary-action" type="button"
+              onClick={() => handleSelectProjectView("project-import")}>
                 Import Files
               </button>
             </div>
@@ -640,6 +700,131 @@ const App = () => {
     );
   };
 
+  const renderImportView = () => {
+    const handleDragOver = (e: React.DragEvent) => {
+      e.preventDefault();
+      setIsDragging(true);
+    };
+
+    const handleDragLeave = () => {
+      setIsDragging(false);
+    };
+
+    if (!selectedProject) return null;
+
+    const processFiles = (fileList: FileList | null) => {
+      if (!fileList || !selectedProject) return;
+
+      const newFiles = Array.from(fileList);
+      setFiles((prev) => {
+        const combined = [...prev, ...newFiles];
+
+        const unique = combined.filter(
+          (file, index, self) =>
+            index === self.findIndex((f) => f.name === file.name)
+        );
+
+        return unique;
+      });
+    };
+
+    const handleDrop = (e: React.DragEvent) => {
+      e.preventDefault();
+      setIsDragging(false);
+      processFiles(e.dataTransfer.files);
+    };
+
+    const handleSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+      processFiles(e.target.files);
+    };
+
+    const handleRemoveFile = (indexToRemove: number) => {
+      setFiles((prev) => prev.filter((_, index) => index !== indexToRemove));
+    };
+
+    return (
+      <section className="project-page">
+        <header className="project-toolbar">
+          <button className="ghost-action" onClick={() => setView("project-files")}>
+            Back
+          </button>
+          <h1>Import Files</h1>
+        </header>
+
+        <div className="import-card" id="import-section">
+          <h2 className="upload-title">Upload Files</h2>
+
+          <div className="import-drop-area">
+            <label
+              className={`dropzone ${isDragging ? "dropzone--dragging" : ""}`}
+              onDrop={handleDrop}
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+            >
+              <input
+                type="file"
+                hidden
+                multiple
+                onChange={handleSelect}
+                accept=".pdf"
+              />
+
+              {files.length === 0 ? (
+                <div className="dropzone__empty-state">
+                  <p className="dropzone__text">Drag and drop files or click the arrow</p>
+
+                  <img
+                    src="/dragndroparrow.png"
+                    alt="Upload"
+                    className="dropzone__image"
+                  />
+
+                  <p className="dropzone__text">
+                    Accepted Formats: PDF
+                  </p>
+                </div>
+              ) : (
+                <ul className="dropzone__file-list">
+                  {files.slice(0, 5).map((file, i) => (
+                    <li key={i} className="dropzone__file-item">
+                      <span className="file-name">{file.name}</span>
+                      <button
+                        className="file-remove-btn"
+                        onClick={(e) => {
+                          e.stopPropagation(); // prevents triggering file picker
+                          handleRemoveFile(i);
+                        }}
+                        type="button"
+                      >
+                        ✕
+                      </button>
+                    </li>
+                  ))}
+
+                  {files.length > 5 && (
+                    <li className="dropzone__more">
+                      +{files.length - 5} more
+                    </li>
+                  )}
+                </ul>
+              )}
+            </label>
+          </div>
+
+          <div className="import-btn-container">
+              <button className="primary-action"
+              onClick={() => setIsImportDialogOpen(true)}
+              disabled={files.length === 0}
+              type="button">
+                Import
+              </button>
+          </div>
+
+        </div>
+      </section>
+    );
+  };
+
   return (
     <main className={`workspace-shell ${showTabs ? "" : "workspace-shell--immersive"}`}>
       {showTabs ? (
@@ -671,6 +856,7 @@ const App = () => {
 
       {view === "project-files" ? renderProjectView() : null}
       {view === "project-chat" ? renderChatView() : null}
+      {view === "project-import" ? renderImportView() : null}
 
       {isCreateProjectDialogOpen ? (
         <div className="dialog-backdrop" role="dialog" aria-modal="true" aria-labelledby="create-project-title">
@@ -707,6 +893,60 @@ const App = () => {
                 type="button"
               >
                 Create
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {isImportDialogOpen ? (
+        <div
+          className="dialog-backdrop"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="import-warning-title"
+        >
+          <div className="dialog-card">
+            <button
+              aria-label="Close import dialog"
+              className="dialog-close"
+              onClick={() => setIsImportDialogOpen(false)}
+              type="button"
+            >
+              x
+            </button>
+
+            <h2 className="dialog-title" id="import-warning-title">
+              WARNING
+            </h2>
+
+            <p className="dialog-text">
+              The uploaded documents may be processed by a Large Language Model (LLM).
+              This may involve sending data to external services.
+            </p>
+
+            <p className="dialog-text dialog-text--warning">
+              Do NOT upload sensitive or personal information.
+            </p>
+
+            <div className="dialog-actions">
+              <button
+                className="ghost-action"
+                onClick={() => setIsImportDialogOpen(false)}
+                type="button"
+              >
+                Cancel
+              </button>
+
+              <button
+                className="primary-action"
+                onClick={() => {
+                  handleImportFiles();
+                  setIsImportDialogOpen(false);
+                }}
+                type="button"
+              >
+                I Understand & Import
               </button>
             </div>
           </div>
