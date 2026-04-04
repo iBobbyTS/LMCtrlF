@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from peewee import CharField, DateTimeField, ForeignKeyField, Model, TextField
+from peewee import CharField, DateTimeField, ForeignKeyField, IntegerField, Model, TextField
 
 from app.db import database_proxy
 
@@ -34,9 +34,21 @@ class Document(BaseModel):
     file_path = TextField()
     md5 = CharField()
     status = CharField()
+    progress = IntegerField(default=0)
     created_at = DateTimeField(default=utc_now)
     updated_at = DateTimeField(default=utc_now)
 
     class Meta:
         table_name = "documents"
         indexes = ((("project", "file_path"), True),)
+
+
+class ModelSettings(BaseModel):
+    id = CharField(primary_key=True)
+    selected_provider_id = CharField()
+    providers_json = TextField()
+    created_at = DateTimeField(default=utc_now)
+    updated_at = DateTimeField(default=utc_now)
+
+    class Meta:
+        table_name = "model_settings"

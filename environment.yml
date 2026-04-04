@@ -5,9 +5,11 @@ dependencies:
   - python=3.13
   - pip
   - fastapi
-  - peewee
-  - uvicorn
   - httpx
+  - lancedb
+  - peewee
+  - pypdf
+  - uvicorn
   - pydantic>=2
   - pydantic-settings
   - pytest

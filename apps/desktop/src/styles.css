@@ -680,6 +680,11 @@ button {
   margin-top: 22px;
 }
 
+.settings-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
 .form-field {
   display: flex;
   flex-direction: column;

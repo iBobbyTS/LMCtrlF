@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
 
-from fastapi import APIRouter, HTTPException, Response, status
+from fastapi import APIRouter, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field, field_validator
 
 from app.models import Document, Project
@@ -33,7 +33,7 @@ def serialize_project(project: Project) -> dict[str, str]:
     }
 
 
-def serialize_document(document: Document) -> dict[str, str]:
+def serialize_document(document: Document) -> dict[str, str | int]:
     return {
         "id": document.id,
         "projectId": document.project_id,
@@ -41,6 +41,7 @@ def serialize_document(document: Document) -> dict[str, str]:
         "filePath": document.file_path,
         "md5": document.md5,
         "status": document.status,
+        "progress": document.progress,
         "createdAt": serialize_timestamp(document.created_at),
         "updatedAt": serialize_timestamp(document.updated_at),
     }
@@ -70,7 +71,7 @@ def hash_file(file_path: Path) -> str:
     return digest.hexdigest()
 
 
-def list_serialized_documents(project_id: str) -> list[dict[str, str]]:
+def list_serialized_documents(project_id: str) -> list[dict[str, str | int]]:
     query = (
         Document.select()
         .where(Document.project_id == project_id)
@@ -129,15 +130,20 @@ def create_project(payload: CreateProjectRequest) -> dict[str, str]:
 
 
 @router.get("/projects/{project_id}/documents")
-def list_documents(project_id: str) -> list[dict[str, str]]:
+def list_documents(project_id: str) -> list[dict[str, str | int]]:
     get_project_or_404(project_id)
     return list_serialized_documents(project_id)
 
 
 @router.post("/projects/{project_id}/documents/import")
-def import_documents(project_id: str, payload: ImportDocumentsRequest) -> list[dict[str, str]]:
+def import_documents(
+    project_id: str, payload: ImportDocumentsRequest, request: Request
+) -> list[dict[str, str | int]]:
     project = get_project_or_404(project_id)
     touched_at = utc_now()
+    indexer = request.app.state.indexing_worker
+    documents_to_enqueue: list[str] = []
+    touched_documents: dict[str, dict[str, str | int]] = {}
 
     for item in payload.items:
         resolved_path = Path(item.filePath).expanduser().resolve()
@@ -153,16 +159,19 @@ def import_documents(project_id: str, payload: ImportDocumentsRequest) -> list[d
         )
 
         if existing is None:
-            Document.create(
+            document = Document.create(
                 id=f"document-{uuid4().hex}",
                 project=project,
                 name=item.name,
                 file_path=str(resolved_path),
                 md5=md5,
                 status="queued",
+                progress=0,
                 created_at=touched_at,
                 updated_at=touched_at,
             )
+            documents_to_enqueue.append(document.id)
+            touched_documents[document.id] = serialize_document(document)
             continue
 
         existing.name = item.name
@@ -170,18 +179,42 @@ def import_documents(project_id: str, payload: ImportDocumentsRequest) -> list[d
         if existing.md5 != md5:
             existing.md5 = md5
             existing.status = "file_changed"
+            existing.progress = 0
         existing.save()
+        touched_documents[existing.id] = serialize_document(existing)
 
     project.updated_at = touched_at
     project.save()
-    return list_serialized_documents(project_id)
+    documents = [
+        touched_documents.get(document["id"], document) for document in list_serialized_documents(project_id)
+    ]
+    for document_id in documents_to_enqueue:
+        indexer.enqueue(document_id)
+    return documents
 
 
 @router.delete("/projects/{project_id}/documents/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_document(project_id: str, document_id: str) -> Response:
+def delete_document(project_id: str, document_id: str, request: Request) -> Response:
     project = get_project_or_404(project_id)
     document = get_document_or_404(project_id, document_id)
+    request.app.state.lancedb_store.delete_document_chunks(document.id)
     document.delete_instance()
     project.updated_at = utc_now()
     project.save()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post("/projects/{project_id}/documents/{document_id}/reindex")
+def reindex_document(project_id: str, document_id: str, request: Request) -> dict[str, str | int]:
+    document = get_document_or_404(project_id, document_id)
+    request.app.state.lancedb_store.delete_document_chunks(document.id)
+    document.status = "queued"
+    document.progress = 0
+    document.updated_at = utc_now()
+    document.save()
+    project = document.project
+    project.updated_at = document.updated_at
+    project.save()
+    serialized = serialize_document(document)
+    request.app.state.indexing_worker.enqueue(document.id)
+    return serialized

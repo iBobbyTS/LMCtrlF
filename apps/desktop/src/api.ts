@@ -3,6 +3,7 @@ import type {
   DocumentRecord,
   HealthResponse,
   ImportDocumentsRequest,
+  ModelSettingsResponse,
   ProjectRecord
 } from "@lmctrlf/shared";
 
@@ -50,6 +51,14 @@ export const checkBackendHealth = () => request<HealthResponse>("/health");
 
 export const listProjects = () => request<ProjectRecord[]>("/projects");
 
+export const getModelSettings = () => request<ModelSettingsResponse>("/settings/model");
+
+export const updateModelSettings = (payload: ModelSettingsResponse) =>
+  request<ModelSettingsResponse>("/settings/model", {
+    method: "PUT",
+    body: JSON.stringify(payload)
+  });
+
 export const createWorkspaceProject = (payload: CreateProjectRequest) =>
   request<ProjectRecord>("/projects", {
     method: "POST",
@@ -68,4 +77,9 @@ export const importProjectDocuments = (projectId: string, payload: ImportDocumen
 export const deleteProjectDocument = (projectId: string, documentId: string) =>
   request<void>(`/projects/${projectId}/documents/${documentId}`, {
     method: "DELETE"
+  });
+
+export const reindexProjectDocument = (projectId: string, documentId: string) =>
+  request<DocumentRecord>(`/projects/${projectId}/documents/${documentId}/reindex`, {
+    method: "POST"
   });
