@@ -2,12 +2,18 @@ import { spawn, type ChildProcess } from "node:child_process";
 
 import { app, BrowserWindow } from "electron";
 
-import { getBackendLaunchCommand, resolveBackendBaseUrl, resolveRendererEntry } from "./config";
+import {
+  getBackendLaunchCommand,
+  resolveBackendBaseUrl,
+  resolvePreloadEntry,
+  resolveRendererEntry
+} from "./config";
 
 let backendProcess: ChildProcess | null = null;
 
 const createWindow = async (): Promise<void> => {
   const backendBaseUrl = resolveBackendBaseUrl(process.env.LMCTRLF_BACKEND_URL);
+  const preloadEntry = resolvePreloadEntry();
   const rendererEntry = resolveRendererEntry(process.env.LMCTRLF_RENDERER_URL);
 
   const window = new BrowserWindow({
@@ -16,7 +22,7 @@ const createWindow = async (): Promise<void> => {
     minWidth: 1280,
     minHeight: 720,
     webPreferences: {
-      preload: new URL("./preload.js", import.meta.url).pathname,
+      preload: preloadEntry,
       additionalArguments: [`--backend-base-url=${backendBaseUrl}`]
     }
   });

@@ -3,7 +3,12 @@ import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
 
-import { getBackendLaunchCommand, resolveBackendBaseUrl, resolveRendererEntry } from "./config";
+import {
+  getBackendLaunchCommand,
+  resolveBackendBaseUrl,
+  resolvePreloadEntry,
+  resolveRendererEntry
+} from "./config";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -11,6 +16,7 @@ const __dirname = path.dirname(__filename);
 describe("desktop config", () => {
   it("uses sensible defaults when no runtime values are provided", () => {
     expect(resolveBackendBaseUrl()).toBe("http://127.0.0.1:8000");
+    expect(resolvePreloadEntry()).toBe(path.resolve(__dirname, "./preload.cjs"));
     expect(resolveRendererEntry()).toBe(path.resolve(__dirname, "../static/index.html"));
   });
 
