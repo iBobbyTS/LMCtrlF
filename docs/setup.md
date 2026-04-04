@@ -39,3 +39,5 @@ pnpm --filter @lmctrlf/desktop dev
 ```
 
 The Electron main process starts the Python sidecar automatically in development unless `LMCTRLF_BACKEND_URL` is already set.
+
+If `127.0.0.1:8000` is already occupied, the Electron main process probes the next local ports and starts the sidecar on the first available one. The desktop window is only created after the chosen backend answers `/health`, so a failed sidecar launch no longer opens the UI against a stale or missing local service.

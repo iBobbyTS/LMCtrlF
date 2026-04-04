@@ -42,10 +42,12 @@ const createFetchMock = (seed?: {
   projects?: MockProject[];
   documentsByProject?: Record<string, MockDocument[]>;
   healthSequence?: Array<"ok" | "offline">;
+  offlinePaths?: string[];
 }) => {
   let projectCounter = (seed?.projects?.length ?? 0) + 1;
   let documentCounter = 1;
   const healthSequence = [...(seed?.healthSequence ?? ["ok"])];
+  const offlinePaths = new Set(seed?.offlinePaths ?? []);
   const projects = [...(seed?.projects ?? [])];
   const documentsByProject = Object.fromEntries(
     Object.entries(seed?.documentsByProject ?? {}).map(([projectId, documents]) => [
@@ -58,6 +60,10 @@ const createFetchMock = (seed?: {
     const requestUrl = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
     const url = new URL(requestUrl);
     const method = init?.method ?? "GET";
+
+    if (offlinePaths.has(url.pathname)) {
+      throw new TypeError("Failed to fetch");
+    }
 
     if (url.pathname === "/health" && method === "GET") {
       const nextHealthState =
@@ -201,6 +207,19 @@ describe("App", () => {
     expect(within(dialog).getByRole("button", { name: "Retry" })).toBeInTheDocument();
     expect(within(dialog).queryAllByRole("button")).toHaveLength(1);
     expect(screen.queryByText("No projects yet")).not.toBeInTheDocument();
+  });
+
+  it("reuses the backend unreachable dialog when a later startup request cannot reach the backend", async () => {
+    const fetchMock = createFetchMock({ offlinePaths: ["/projects"] });
+    globalThis.fetch = fetchMock as typeof fetch;
+
+    render(<App />);
+
+    const dialog = await screen.findByRole("dialog", { name: "Backend Unreachable" });
+    expect(within(dialog).getByRole("button", { name: "Retry" })).toBeInTheDocument();
+    expect(within(dialog).queryAllByRole("button")).toHaveLength(1);
+    expect(within(dialog).getByText("Could not connect to the backend.")).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
   it("retries workspace loading after the backend becomes reachable again", async () => {

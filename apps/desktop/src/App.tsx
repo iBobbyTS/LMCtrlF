@@ -56,6 +56,10 @@ const getErrorMessage = (error: unknown): string => {
   return error instanceof Error ? error.message : "Something went wrong.";
 };
 
+const isBackendConnectionError = (error: unknown): boolean => {
+  return getErrorMessage(error) === "Could not connect to the backend.";
+};
+
 const cloneThreads = (): ThreadMap => ({});
 
 const buildStarterThread = (projectId: string, threadCount: number): ChatThread => {
@@ -111,6 +115,19 @@ const App = () => {
   const [isCreatingProject, setIsCreatingProject] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
 
+  const handleWorkspaceError = (error: unknown) => {
+    const message = getErrorMessage(error);
+
+    if (isBackendConnectionError(error)) {
+      setWorkspaceError("");
+      setBackendDialogMessage(message);
+      return;
+    }
+
+    setBackendDialogMessage("");
+    setWorkspaceError(message);
+  };
+
   const loadWorkspace = async () => {
     setIsLoadingWorkspace(true);
     setWorkspaceError("");
@@ -142,12 +159,15 @@ const App = () => {
         Object.fromEntries(nextProjects.map((project) => [project.id, current[project.id] ?? []]))
       );
     } catch (error) {
-      setWorkspaceError(getErrorMessage(error));
-      setProjectList([]);
-      setDocumentsByProject({});
-      setThreadsByProject(cloneThreads());
-      setSelectedProjectId("");
-      setSelectedThreadId("");
+      handleWorkspaceError(error);
+
+      if (!isBackendConnectionError(error)) {
+        setProjectList([]);
+        setDocumentsByProject({});
+        setThreadsByProject(cloneThreads());
+        setSelectedProjectId("");
+        setSelectedThreadId("");
+      }
     } finally {
       setIsLoadingWorkspace(false);
     }
@@ -258,7 +278,7 @@ const App = () => {
       setPendingProjectName("");
       setView("project-files");
     } catch (error) {
-      setWorkspaceError(getErrorMessage(error));
+      handleWorkspaceError(error);
     } finally {
       setIsCreatingProject(false);
     }
@@ -279,7 +299,7 @@ const App = () => {
         )
       }));
     } catch (error) {
-      setWorkspaceError(getErrorMessage(error));
+      handleWorkspaceError(error);
     }
   };
 
@@ -384,7 +404,7 @@ const App = () => {
       setIsImportDialogOpen(false);
       setView("project-files");
     } catch (error) {
-      setWorkspaceError(getErrorMessage(error));
+      handleWorkspaceError(error);
     } finally {
       setIsImporting(false);
     }
