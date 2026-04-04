@@ -1,4 +1,4 @@
-import { contextBridge } from "electron";
+import { contextBridge, webUtils } from "electron";
 
 import { resolveBackendBaseUrl } from "./config";
 
@@ -8,5 +8,6 @@ const backendBaseUrl = runtimeArgument
   : resolveBackendBaseUrl(process.env.LMCTRLF_BACKEND_URL);
 
 contextBridge.exposeInMainWorld("lmctrlf", {
-  getBackendBaseUrl: () => backendBaseUrl
+  getBackendBaseUrl: () => backendBaseUrl,
+  getPathForFile: (file: File) => webUtils.getPathForFile(file)
 });

@@ -5,6 +5,7 @@ dependencies:
   - python=3.13
   - pip
   - fastapi
+  - peewee
   - uvicorn
   - httpx
   - pydantic>=2

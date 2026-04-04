@@ -213,3 +213,6 @@ __marimo__/
 
 # Node
 node_modules/
+
+# Backend runtime data
+services/backend/data/
