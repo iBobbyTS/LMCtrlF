@@ -8,6 +8,7 @@ import type {
 import { useEffect, useState, type CSSProperties } from "react";
 
 import {
+  checkBackendHealth,
   createWorkspaceProject,
   deleteProjectDocument,
   importProjectDocuments,
@@ -105,9 +106,52 @@ const App = () => {
   const [files, setFiles] = useState<File[]>([]);
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
   const [isLoadingWorkspace, setIsLoadingWorkspace] = useState(true);
+  const [backendDialogMessage, setBackendDialogMessage] = useState("");
   const [workspaceError, setWorkspaceError] = useState("");
   const [isCreatingProject, setIsCreatingProject] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
+
+  const loadWorkspace = async () => {
+    setIsLoadingWorkspace(true);
+    setWorkspaceError("");
+
+    try {
+      await checkBackendHealth();
+    } catch (error) {
+      setBackendDialogMessage(getErrorMessage(error));
+      setProjectList([]);
+      setDocumentsByProject({});
+      setThreadsByProject(cloneThreads());
+      setSelectedProjectId("");
+      setSelectedThreadId("");
+      setIsLoadingWorkspace(false);
+      return;
+    }
+
+    setBackendDialogMessage("");
+
+    try {
+      const nextProjects = await listProjects();
+      const nextDocuments = await Promise.all(
+        nextProjects.map(async (project) => [project.id, await listProjectDocuments(project.id)] as const)
+      );
+
+      setProjectList(nextProjects);
+      setDocumentsByProject(Object.fromEntries(nextDocuments));
+      setThreadsByProject((current) =>
+        Object.fromEntries(nextProjects.map((project) => [project.id, current[project.id] ?? []]))
+      );
+    } catch (error) {
+      setWorkspaceError(getErrorMessage(error));
+      setProjectList([]);
+      setDocumentsByProject({});
+      setThreadsByProject(cloneThreads());
+      setSelectedProjectId("");
+      setSelectedThreadId("");
+    } finally {
+      setIsLoadingWorkspace(false);
+    }
+  };
 
   useEffect(() => {
     const handleResize = () => {
@@ -121,30 +165,6 @@ const App = () => {
   }, []);
 
   useEffect(() => {
-    const loadWorkspace = async () => {
-      setIsLoadingWorkspace(true);
-      setWorkspaceError("");
-
-      try {
-        const nextProjects = await listProjects();
-        const nextDocuments = await Promise.all(
-          nextProjects.map(async (project) => [project.id, await listProjectDocuments(project.id)] as const)
-        );
-
-        setProjectList(nextProjects);
-        setDocumentsByProject(Object.fromEntries(nextDocuments));
-        setThreadsByProject((current) =>
-          Object.fromEntries(nextProjects.map((project) => [project.id, current[project.id] ?? []]))
-        );
-      } catch (error) {
-        setWorkspaceError(getErrorMessage(error));
-        setProjectList([]);
-        setDocumentsByProject({});
-      } finally {
-        setIsLoadingWorkspace(false);
-      }
-    };
-
     void loadWorkspace();
   }, []);
 
@@ -400,7 +420,7 @@ const App = () => {
           </section>
         ) : null}
 
-        {!isLoadingWorkspace && projectList.length === 0 ? (
+        {!isLoadingWorkspace && !backendDialogMessage && projectList.length === 0 ? (
           <section className="empty-panel">
             <h2>No projects yet</h2>
             <p>Create a project to start importing documents.</p>
@@ -1031,6 +1051,38 @@ const App = () => {
                 type="button"
               >
                 I Understand & Import
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {backendDialogMessage ? (
+        <div
+          aria-labelledby="backend-unreachable-title"
+          aria-modal="true"
+          className="dialog-backdrop"
+          role="dialog"
+        >
+          <div className="dialog-card">
+            <h2 className="dialog-title" id="backend-unreachable-title">
+              Backend Unreachable
+            </h2>
+
+            <p className="dialog-text">
+              The desktop app could not reach the local backend. Start the backend and try again.
+            </p>
+
+            <p className="dialog-text dialog-text--warning">{backendDialogMessage}</p>
+
+            <div className="dialog-actions">
+              <button
+                className="primary-action"
+                disabled={isLoadingWorkspace}
+                onClick={() => void loadWorkspace()}
+                type="button"
+              >
+                Retry
               </button>
             </div>
           </div>

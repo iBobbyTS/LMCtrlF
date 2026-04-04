@@ -20,6 +20,8 @@ The shared contract package currently exposes:
 
 Returns the current backend health status.
 
+The desktop renderer uses this endpoint during startup. If the request fails, the app blocks the workspace behind a retry-only `Backend Unreachable` dialog until `/health` succeeds.
+
 Example response:
 
 ```json

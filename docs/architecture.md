@@ -36,6 +36,7 @@ The current implementation provides:
 - a project workspace with three focused surfaces: `File management`, `Chat`, and `Import Files`
 - a file-management view that locks page scrolling and keeps overflow inside the table region
 - a document import flow with drag-and-drop selection, a warning dialog, and backend persistence
+- a startup health check that blocks the UI behind a retry-only `Backend Unreachable` dialog while the sidecar is offline
 - a chat view with a floating `Threads` button that controls a pinned panel on wide layouts, a temporary drawer on narrow layouts, and internal-only scrolling for threads and messages
 - a simplified Settings surface for provider selection and accessibility toggles
 

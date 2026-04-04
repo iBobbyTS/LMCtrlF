@@ -26,6 +26,8 @@
 
 - desktop runtime config resolves fallback values correctly
 - renderer loads an empty Projects state from the backend
+- startup health-check failures show a retry-only `Backend Unreachable` dialog
+- retrying after the backend recovers closes the dialog and loads the workspace
 - creating a project requires a modal prompt for the project name
 - creating a named project persists the record and opens an empty project workspace
 - importing a document requires an explicit warning acknowledgement

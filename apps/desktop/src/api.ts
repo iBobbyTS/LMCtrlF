@@ -1,6 +1,7 @@
 import type {
   CreateProjectRequest,
   DocumentRecord,
+  HealthResponse,
   ImportDocumentsRequest,
   ProjectRecord
 } from "@lmctrlf/shared";
@@ -8,13 +9,19 @@ import type {
 import { getBackendBaseUrl } from "./runtime";
 
 const request = async <T>(path: string, init?: RequestInit): Promise<T> => {
-  const response = await fetch(`${getBackendBaseUrl()}${path}`, {
-    ...init,
-    headers: {
-      ...(init?.body ? { "Content-Type": "application/json" } : {}),
-      ...init?.headers
-    }
-  });
+  let response: Response;
+
+  try {
+    response = await fetch(`${getBackendBaseUrl()}${path}`, {
+      ...init,
+      headers: {
+        ...(init?.body ? { "Content-Type": "application/json" } : {}),
+        ...init?.headers
+      }
+    });
+  } catch {
+    throw new Error("Could not connect to the backend.");
+  }
 
   if (!response.ok) {
     let message = `Request failed with status ${response.status}.`;
@@ -38,6 +45,8 @@ const request = async <T>(path: string, init?: RequestInit): Promise<T> => {
 
   return (await response.json()) as T;
 };
+
+export const checkBackendHealth = () => request<HealthResponse>("/health");
 
 export const listProjects = () => request<ProjectRecord[]>("/projects");
 

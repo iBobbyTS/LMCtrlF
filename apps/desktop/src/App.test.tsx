@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 
 import App from "./App";
 
@@ -41,9 +41,11 @@ const createJsonResponse = (payload: unknown, status = 200) => {
 const createFetchMock = (seed?: {
   projects?: MockProject[];
   documentsByProject?: Record<string, MockDocument[]>;
+  healthSequence?: Array<"ok" | "offline">;
 }) => {
   let projectCounter = (seed?.projects?.length ?? 0) + 1;
   let documentCounter = 1;
+  const healthSequence = [...(seed?.healthSequence ?? ["ok"])];
   const projects = [...(seed?.projects ?? [])];
   const documentsByProject = Object.fromEntries(
     Object.entries(seed?.documentsByProject ?? {}).map(([projectId, documents]) => [
@@ -56,6 +58,17 @@ const createFetchMock = (seed?: {
     const requestUrl = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
     const url = new URL(requestUrl);
     const method = init?.method ?? "GET";
+
+    if (url.pathname === "/health" && method === "GET") {
+      const nextHealthState =
+        healthSequence.length > 1 ? healthSequence.shift() ?? "ok" : (healthSequence[0] ?? "ok");
+
+      if (nextHealthState === "offline") {
+        throw new TypeError("Failed to fetch");
+      }
+
+      return createJsonResponse({ status: "ok" });
+    }
 
     if (url.pathname === "/projects" && method === "GET") {
       return createJsonResponse(projects);
@@ -174,7 +187,45 @@ describe("App", () => {
 
     expect(await screen.findByText("No projects yet")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Create Project" })).toBeInTheDocument();
-    expect(fetchMock.mock.calls[0]?.[0]).toBe("http://127.0.0.1:8000/projects");
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("http://127.0.0.1:8000/health");
+    expect(fetchMock.mock.calls[1]?.[0]).toBe("http://127.0.0.1:8000/projects");
+  });
+
+  it("shows a retry-only backend unreachable dialog when startup health checks fail", async () => {
+    const fetchMock = createFetchMock({ healthSequence: ["offline"] });
+    globalThis.fetch = fetchMock as typeof fetch;
+
+    render(<App />);
+
+    const dialog = await screen.findByRole("dialog", { name: "Backend Unreachable" });
+    expect(within(dialog).getByRole("button", { name: "Retry" })).toBeInTheDocument();
+    expect(within(dialog).queryAllByRole("button")).toHaveLength(1);
+    expect(screen.queryByText("No projects yet")).not.toBeInTheDocument();
+  });
+
+  it("retries workspace loading after the backend becomes reachable again", async () => {
+    const seedProject: MockProject = {
+      id: "project-1",
+      name: "Field Notes",
+      accent: "#c2410c",
+      createdAt: "2026-04-03T12:00:00.000Z",
+      updatedAt: "2026-04-03T12:00:00.000Z"
+    };
+    const fetchMock = createFetchMock({
+      healthSequence: ["offline", "ok"],
+      projects: [seedProject],
+      documentsByProject: { "project-1": [] }
+    });
+    globalThis.fetch = fetchMock as typeof fetch;
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Retry" }));
+
+    expect(await screen.findByRole("button", { name: /Field Notes 0 files/i })).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog", { name: "Backend Unreachable" })).not.toBeInTheDocument();
+    });
   });
 
   it("creates a project through the backend and opens its empty workspace", async () => {
