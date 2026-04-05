@@ -1422,7 +1422,7 @@ const App = () => {
         <section className="settings-card">
           <h1>Model settings</h1>
 
-          <div className="settings-form">
+          <form className="settings-form" id="settings-form">
             <label className="form-field">
               <span>Provider</span>
               <select
@@ -1438,8 +1438,9 @@ const App = () => {
             </label>
 
             <label className="form-field">
-              <span>Base URL</span>
+              <span>Base URL (required)</span>
               <input
+                required
                 onChange={(event) => handleUpdateProviderField("baseUrl", event.target.value)}
                 type="text"
                 value={selectedProvider.baseUrl}
@@ -1447,8 +1448,9 @@ const App = () => {
             </label>
 
             <label className="form-field">
-              <span>Embedding model</span>
+              <span>Embedding model (required)</span>
               <input
+                required
                 onChange={(event) => handleUpdateProviderField("embeddingModel", event.target.value)}
                 type="text"
                 value={selectedProvider.embeddingModel}
@@ -1456,8 +1458,9 @@ const App = () => {
             </label>
 
             <label className="form-field">
-              <span>Chatting model</span>
+              <span>Chatting model (required)</span>
               <input
+                required
                 onChange={(event) => handleUpdateProviderField("chattingModel", event.target.value)}
                 type="text"
                 value={selectedProvider.chattingModel}
@@ -1483,7 +1486,7 @@ const App = () => {
                 Save settings
               </button>
             </div>
-          </div>
+          </form>
         </section>
 
         <section className="settings-card">
