@@ -1446,17 +1446,13 @@ const App = () => {
   };
 
   return (
-    <div className="app-shell">
-      <header className="shell-header">
-        <div>
-          <p className="shell-header__eyebrow">LMCtrlF</p>
-        </div>
-
-        {showTabs ? (
-          <nav aria-label="Primary navigation" className="top-nav">
+    <main className={`workspace-shell ${showTabs ? "" : "workspace-shell--immersive"}`}>
+      {showTabs ? (
+        <>
+          <header className="top-tabs" aria-label="Primary navigation">
             <button
               aria-pressed={view === "projects"}
-              className={`top-nav__item ${view === "projects" ? "top-nav__item--active" : ""}`}
+              className={`top-tabs__button ${view === "projects" ? "top-tabs__button--active" : ""}`}
               onClick={() => handleSelectTopLevel("projects")}
               type="button"
             >
@@ -1464,25 +1460,28 @@ const App = () => {
             </button>
             <button
               aria-pressed={view === "settings"}
-              className={`top-nav__item ${view === "settings" ? "top-nav__item--active" : ""}`}
+              className={`top-tabs__button ${view === "settings" ? "top-tabs__button--active" : ""}`}
               onClick={() => handleSelectTopLevel("settings")}
               type="button"
             >
               Settings
             </button>
-          </nav>
-        ) : (
-          <div />
-        )}
-      </header>
+          </header>
 
-      <main className="shell-main">
-        {view === "projects" ? renderProjectsView() : null}
-        {view === "settings" ? renderSettingsView() : null}
-        {view === "project-files" ? renderProjectView() : null}
-        {view === "project-chat" ? renderChatView() : null}
-        {view === "project-import" ? renderImportView() : null}
-      </main>
+          <section className="page-frame">
+            {view === "projects" ? renderProjectsView() : null}
+            {view === "settings" ? renderSettingsView() : null}
+          </section>
+        </>
+      ) : null}
+
+      {!showTabs ? (
+        <>
+          {view === "project-files" ? renderProjectView() : null}
+          {view === "project-chat" ? renderChatView() : null}
+          {view === "project-import" ? renderImportView() : null}
+        </>
+      ) : null}
 
       {isCreateProjectDialogOpen ? (
         <div className="dialog-backdrop" role="presentation">
@@ -1556,7 +1555,7 @@ const App = () => {
       ) : null}
 
       {renderBackendDialog()}
-    </div>
+    </main>
   );
 };
 

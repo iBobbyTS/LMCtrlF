@@ -36,7 +36,8 @@ button {
   min-height: 100vh;
 }
 
-.workspace-shell {
+.workspace-shell,
+.app-shell {
   min-height: 100vh;
   min-width: 1280px;
   padding: 28px;
@@ -46,7 +47,25 @@ button {
   padding: 22px;
 }
 
-.top-tabs {
+.shell-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.shell-header__eyebrow,
+.eyebrow {
+  margin: 0;
+  color: #9a3412;
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.top-tabs,
+.top-nav {
   display: inline-flex;
   gap: 8px;
   padding: 8px;
@@ -57,7 +76,8 @@ button {
   backdrop-filter: blur(14px);
 }
 
-.top-tabs__button {
+.top-tabs__button,
+.top-nav__item {
   border: 0;
   border-radius: 999px;
   padding: 12px 18px;
@@ -71,17 +91,20 @@ button {
     transform 160ms ease;
 }
 
-.top-tabs__button:hover {
+.top-tabs__button:hover,
+.top-nav__item:hover {
   transform: translateY(-1px);
 }
 
-.top-tabs__button--active {
+.top-tabs__button--active,
+.top-nav__item--active {
   color: #fef7ed;
   background: linear-gradient(135deg, #9a3412 0%, #ea580c 100%);
   box-shadow: 0 14px 28px rgba(154, 52, 18, 0.22);
 }
 
-.page-frame {
+.page-frame,
+.shell-main {
   width: min(1320px, 100%);
   margin: 28px auto 0;
 }
@@ -158,15 +181,6 @@ button {
   padding: 28px;
 }
 
-.eyebrow {
-  margin: 0;
-  color: #9a3412;
-  font-size: 0.78rem;
-  font-weight: 800;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-}
-
 .display-title,
 .project-toolbar__title h1,
 .thread-sidebar__header h1,
@@ -189,7 +203,8 @@ button {
 .primary-action,
 .secondary-action,
 .ghost-action,
-.top-tabs__button {
+.top-tabs__button,
+.top-nav__item {
   transition:
     transform 140ms ease,
     box-shadow 140ms ease,
