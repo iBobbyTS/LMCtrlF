@@ -1121,3 +1121,37 @@ button {
   justify-content: center;
   width: 100%;
 }
+
+.reduce-motion * {
+  transition: none !important;
+}
+
+.high-contrast {
+  --border-color: #000;
+  --background-light: #fff;
+  --text-color: #000;
+}
+
+.high-contrast .library-sidebar,
+.high-contrast .project-preview,
+.high-contrast .import-card,
+.high-contrast .table-card,
+.high-contrast .settings-card,
+.high-contrast .thread-sidebar,
+.high-contrast .conversation-panel {
+  border-color: var(--border-color);
+  background: var(--background-light);
+  color: var(--text-color);
+}
+
+.larger-text {
+  font-size: 1.1em;
+}
+
+.larger-text .section-copy,
+.larger-text .project-toolbar__title p,
+.larger-text .conversation-panel__header p,
+.larger-text .switch-row__description,
+.larger-text .message-bubble p {
+  font-size: 1.2em;
+}
