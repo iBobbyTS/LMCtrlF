@@ -63,3 +63,10 @@ class LanceDBStore:
         table = self._open_table()
         rows = table.search().where(f"document_id = '{document_id}'").limit(10_000).to_list()
         return [dict(row) for row in rows]
+
+    def search_project_chunks(
+        self, project_id: str, vector: list[float], limit: int = 6
+    ) -> list[dict[str, Any]]:
+        table = self._open_table()
+        rows = table.search(vector).where(f"project_id = '{project_id}'").limit(limit).to_list()
+        return [dict(row) for row in rows]

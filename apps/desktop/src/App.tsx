@@ -1,22 +1,30 @@
 import type {
+  ChatMessageRecord,
+  ChatThreadRecord,
+  CitationRecord,
   CreateProjectRequest,
   DocumentRecord,
   DocumentStatus,
   ImportDocumentItem,
   ModelSettingsResponse,
-  ProjectRecord
+  ProjectRecord,
+  ProviderId
 } from "@lmctrlf/shared";
 import { useEffect, useState, type CSSProperties } from "react";
 
 import {
   checkBackendHealth,
+  createProjectThread,
   createWorkspaceProject,
   deleteProjectDocument,
   getModelSettings,
   importProjectDocuments,
   listProjectDocuments,
+  listProjectThreads,
   listProjects,
+  listThreadMessages,
   reindexProjectDocument,
+  streamThreadMessage,
   updateModelSettings
 } from "./api";
 import {
@@ -24,14 +32,24 @@ import {
   defaultSelectedProviderId,
   providerProfiles,
   type AccessibilityOption,
-  type ChatThread,
   type ProviderDraft
 } from "./defaults";
 import "./styles.css";
 
 type AppView = "projects" | "settings" | "project-files" | "project-chat" | "project-import";
-type ThreadMap = Record<string, ChatThread[]>;
+type ThreadMap = Record<string, ChatThreadRecord[]>;
+type MessageMap = Record<string, ChatMessageRecord[]>;
+type BooleanMap = Record<string, boolean>;
 type LocalFile = File & { path?: string };
+
+interface StreamingAssistantState {
+  threadId: string;
+  role: string;
+  content: string;
+  reasoningContent: string;
+  reasoningCollapsed: boolean;
+  createdAt: string;
+}
 
 const accentPalette = ["#c2410c", "#14532d", "#1d4ed8", "#7c2d12", "#0f766e"];
 const chatDrawerBreakpoint = 1180;
@@ -44,6 +62,10 @@ const cloneProviders = (): ProviderDraft[] => providerProfiles.map((profile) => 
 
 const cloneAccessibility = (): AccessibilityOption[] =>
   accessibilityOptions.map((option) => ({ ...option }));
+
+const cloneThreads = (): ThreadMap => ({});
+const cloneMessages = (): MessageMap => ({});
+const cloneFlags = (): BooleanMap => ({});
 
 const documentStatusLabels: Record<DocumentStatus, string> = {
   queued: "Queued",
@@ -68,27 +90,6 @@ const isBackendConnectionError = (error: unknown): boolean => {
   return getErrorMessage(error) === "Could not connect to the backend.";
 };
 
-const cloneThreads = (): ThreadMap => ({});
-
-const buildStarterThread = (projectId: string, threadCount: number): ChatThread => {
-  const id = `${projectId}-thread-${threadCount}`;
-
-  return {
-    id,
-    title: `New thread ${threadCount}`,
-    updatedAt: "Just now",
-    summary: "Use this space for a focused follow-up question.",
-    messages: [
-      {
-        id: `${id}-message-1`,
-        role: "assistant",
-        content:
-          "Ask a question about the imported documents once indexing is available. This thread stays local for now."
-      }
-    ]
-  };
-};
-
 const resolveFilePath = (file: File): string => {
   const bridgedPath = window.lmctrlf?.getPathForFile(file) ?? "";
   if (bridgedPath.length > 0) {
@@ -99,15 +100,183 @@ const resolveFilePath = (file: File): string => {
   return typeof localPath === "string" ? localPath : "";
 };
 
+const buildTemporaryId = (prefix: string): string => {
+  return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+};
+
+const renderInlineMarkdown = (text: string) => {
+  const pattern = /(\[([^\]]+)\]\((https?:\/\/[^\s)]+)\))|(`([^`]+)`)|(\*\*([^*]+)\*\*)|(\*([^*]+)\*)/g;
+  const nodes: Array<string | JSX.Element> = [];
+  let lastIndex = 0;
+  let match: RegExpExecArray | null = pattern.exec(text);
+  let key = 0;
+
+  while (match) {
+    if (match.index > lastIndex) {
+      nodes.push(text.slice(lastIndex, match.index));
+    }
+
+    if (match[2] && match[3]) {
+      nodes.push(
+        <a href={match[3]} key={`inline-${key}`} rel="noreferrer" target="_blank">
+          {match[2]}
+        </a>
+      );
+    } else if (match[5]) {
+      nodes.push(<code key={`inline-${key}`}>{match[5]}</code>);
+    } else if (match[7]) {
+      nodes.push(<strong key={`inline-${key}`}>{match[7]}</strong>);
+    } else if (match[9]) {
+      nodes.push(<em key={`inline-${key}`}>{match[9]}</em>);
+    }
+
+    lastIndex = pattern.lastIndex;
+    key += 1;
+    match = pattern.exec(text);
+  }
+
+  if (lastIndex < text.length) {
+    nodes.push(text.slice(lastIndex));
+  }
+
+  return nodes;
+};
+
+const renderMarkdownBlocks = (markdown: string) => {
+  const normalized = markdown.replace(/\r\n/g, "\n").trim();
+  if (!normalized) {
+    return null;
+  }
+
+  const blocks = normalized.split(/\n{2,}/);
+
+  return blocks.map((block, blockIndex) => {
+    const lines = block.split("\n").map((line) => line.trimEnd());
+    const firstLine = lines[0]?.trim() ?? "";
+
+    if (lines.every((line) => /^[-*]\s+/.test(line.trim()))) {
+      return (
+        <ul key={`block-${blockIndex}`}>
+          {lines.map((line, itemIndex) => (
+            <li key={`item-${blockIndex}-${itemIndex}`}>
+              {renderInlineMarkdown(line.trim().replace(/^[-*]\s+/, ""))}
+            </li>
+          ))}
+        </ul>
+      );
+    }
+
+    const orderedListMatches = lines.map((line) => line.trim().match(/^\d+\.\s+(.*)$/));
+    if (orderedListMatches.every((item) => item)) {
+      return (
+        <ol key={`block-${blockIndex}`}>
+          {orderedListMatches.map((item, itemIndex) => (
+            <li key={`item-${blockIndex}-${itemIndex}`}>{renderInlineMarkdown(item?.[1] ?? "")}</li>
+          ))}
+        </ol>
+      );
+    }
+
+    const headingMatch = firstLine.match(/^(#{1,6})\s+(.*)$/);
+    if (headingMatch) {
+      const level = headingMatch[1].length;
+      const content = headingMatch[2];
+
+      if (level === 1) {
+        return <h1 key={`block-${blockIndex}`}>{renderInlineMarkdown(content)}</h1>;
+      }
+      if (level === 2) {
+        return <h2 key={`block-${blockIndex}`}>{renderInlineMarkdown(content)}</h2>;
+      }
+      if (level === 3) {
+        return <h3 key={`block-${blockIndex}`}>{renderInlineMarkdown(content)}</h3>;
+      }
+      if (level === 4) {
+        return <h4 key={`block-${blockIndex}`}>{renderInlineMarkdown(content)}</h4>;
+      }
+      if (level === 5) {
+        return <h5 key={`block-${blockIndex}`}>{renderInlineMarkdown(content)}</h5>;
+      }
+      return <h6 key={`block-${blockIndex}`}>{renderInlineMarkdown(content)}</h6>;
+    }
+
+    if (lines.length >= 2 && lines[0]?.startsWith("```") && lines.at(-1)?.trim() === "```") {
+      const code = lines.slice(1, -1).join("\n");
+      return (
+        <pre key={`block-${blockIndex}`}>
+          <code>{code}</code>
+        </pre>
+      );
+    }
+
+    if (lines.every((line) => line.trim().startsWith(">"))) {
+      return (
+        <blockquote key={`block-${blockIndex}`}>
+          <p>{renderInlineMarkdown(lines.map((line) => line.trim().replace(/^>\s?/, "")).join(" "))}</p>
+        </blockquote>
+      );
+    }
+
+    return <p key={`block-${blockIndex}`}>{renderInlineMarkdown(lines.join(" "))}</p>;
+  });
+};
+
+const buildPendingUserMessage = (threadId: string, content: string): ChatMessageRecord => {
+  return {
+    id: buildTemporaryId("pending-user"),
+    threadId,
+    senderType: "user",
+    role: "User",
+    content,
+    reasoningContent: "",
+    citations: [],
+    createdAt: new Date().toISOString()
+  };
+};
+
+const buildStreamingAssistantState = (threadId: string, role: string): StreamingAssistantState => {
+  return {
+    threadId,
+    role,
+    content: "",
+    reasoningContent: "",
+    reasoningCollapsed: false,
+    createdAt: new Date().toISOString()
+  };
+};
+
+const upsertThread = (
+  current: ChatThreadRecord[],
+  nextThread: ChatThreadRecord
+): ChatThreadRecord[] => {
+  return [nextThread, ...current.filter((thread) => thread.id !== nextThread.id)];
+};
+
+const mergeCompletedMessages = (
+  current: ChatMessageRecord[],
+  userMessage: ChatMessageRecord,
+  assistantMessage: ChatMessageRecord
+): ChatMessageRecord[] => {
+  const withoutDuplicates = current.filter(
+    (message) => message.id !== userMessage.id && message.id !== assistantMessage.id
+  );
+  return [...withoutDuplicates, userMessage, assistantMessage].sort((left, right) =>
+    left.createdAt.localeCompare(right.createdAt)
+  );
+};
+
 const App = () => {
   const [view, setView] = useState<AppView>("projects");
   const [projectList, setProjectList] = useState<ProjectRecord[]>([]);
   const [documentsByProject, setDocumentsByProject] = useState<Record<string, DocumentRecord[]>>({});
   const [threadsByProject, setThreadsByProject] = useState<ThreadMap>(cloneThreads);
+  const [messagesByThread, setMessagesByThread] = useState<MessageMap>(cloneMessages);
+  const [loadedThreadProjects, setLoadedThreadProjects] = useState<BooleanMap>(cloneFlags);
+  const [loadedMessagesByThread, setLoadedMessagesByThread] = useState<BooleanMap>(cloneFlags);
   const [selectedProjectId, setSelectedProjectId] = useState("");
   const [selectedThreadId, setSelectedThreadId] = useState("");
   const [providerList, setProviderList] = useState<ProviderDraft[]>(cloneProviders);
-  const [selectedProviderId, setSelectedProviderId] = useState(
+  const [selectedProviderId, setSelectedProviderId] = useState<ProviderId>(
     providerProfiles[0]?.id ?? defaultSelectedProviderId
   );
   const [accessibilityList, setAccessibilityList] =
@@ -125,15 +294,13 @@ const App = () => {
   const [isCreatingProject, setIsCreatingProject] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
   const [isSavingModelSettings, setIsSavingModelSettings] = useState(false);
-
-  const syncProjectDocuments = async (projectId: string): Promise<DocumentRecord[]> => {
-    const nextDocuments = await listProjectDocuments(projectId);
-    setDocumentsByProject((current) => ({
-      ...current,
-      [projectId]: nextDocuments
-    }));
-    return nextDocuments;
-  };
+  const [isCreatingThread, setIsCreatingThread] = useState(false);
+  const [isSendingMessage, setIsSendingMessage] = useState(false);
+  const [composerValue, setComposerValue] = useState("");
+  const [pendingUserMessage, setPendingUserMessage] = useState<ChatMessageRecord | null>(null);
+  const [streamingAssistant, setStreamingAssistant] = useState<StreamingAssistantState | null>(null);
+  const [expandedReasoningByMessageId, setExpandedReasoningByMessageId] =
+    useState<BooleanMap>(cloneFlags);
 
   const handleWorkspaceError = (error: unknown) => {
     const message = getErrorMessage(error);
@@ -148,6 +315,47 @@ const App = () => {
     setWorkspaceError(message);
   };
 
+  const syncProjectDocuments = async (projectId: string): Promise<DocumentRecord[]> => {
+    const nextDocuments = await listProjectDocuments(projectId);
+    setBackendDialogMessage("");
+    setDocumentsByProject((current) => ({
+      ...current,
+      [projectId]: nextDocuments
+    }));
+    return nextDocuments;
+  };
+
+  const syncProjectThreads = async (projectId: string): Promise<ChatThreadRecord[]> => {
+    const nextThreads = await listProjectThreads(projectId);
+    setBackendDialogMessage("");
+    setThreadsByProject((current) => ({
+      ...current,
+      [projectId]: nextThreads
+    }));
+    setLoadedThreadProjects((current) => ({
+      ...current,
+      [projectId]: true
+    }));
+    return nextThreads;
+  };
+
+  const syncThreadMessages = async (
+    projectId: string,
+    threadId: string
+  ): Promise<ChatMessageRecord[]> => {
+    const nextMessages = await listThreadMessages(projectId, threadId);
+    setBackendDialogMessage("");
+    setMessagesByThread((current) => ({
+      ...current,
+      [threadId]: nextMessages
+    }));
+    setLoadedMessagesByThread((current) => ({
+      ...current,
+      [threadId]: true
+    }));
+    return nextMessages;
+  };
+
   const loadWorkspace = async () => {
     setIsLoadingWorkspace(true);
     setWorkspaceError("");
@@ -159,8 +367,14 @@ const App = () => {
       setProjectList([]);
       setDocumentsByProject({});
       setThreadsByProject(cloneThreads());
+      setMessagesByThread(cloneMessages());
+      setLoadedThreadProjects(cloneFlags());
+      setLoadedMessagesByThread(cloneFlags());
       setSelectedProjectId("");
       setSelectedThreadId("");
+      setPendingUserMessage(null);
+      setStreamingAssistant(null);
+      setExpandedReasoningByMessageId(cloneFlags());
       setIsLoadingWorkspace(false);
       return;
     }
@@ -177,9 +391,13 @@ const App = () => {
       setSelectedProviderId(settings.selectedProviderId);
       setProjectList(nextProjects);
       setDocumentsByProject(Object.fromEntries(nextDocuments));
-      setThreadsByProject((current) =>
-        Object.fromEntries(nextProjects.map((project) => [project.id, current[project.id] ?? []]))
-      );
+      setThreadsByProject(Object.fromEntries(nextProjects.map((project) => [project.id, []])));
+      setMessagesByThread({});
+      setLoadedThreadProjects({});
+      setLoadedMessagesByThread({});
+      setPendingUserMessage(null);
+      setStreamingAssistant(null);
+      setExpandedReasoningByMessageId({});
     } catch (error) {
       handleWorkspaceError(error);
 
@@ -187,8 +405,14 @@ const App = () => {
         setProjectList([]);
         setDocumentsByProject({});
         setThreadsByProject(cloneThreads());
+        setMessagesByThread(cloneMessages());
+        setLoadedThreadProjects(cloneFlags());
+        setLoadedMessagesByThread(cloneFlags());
         setSelectedProjectId("");
         setSelectedThreadId("");
+        setPendingUserMessage(null);
+        setStreamingAssistant(null);
+        setExpandedReasoningByMessageId(cloneFlags());
       }
     } finally {
       setIsLoadingWorkspace(false);
@@ -227,6 +451,16 @@ const App = () => {
   }, [projectList, selectedProjectId, view]);
 
   useEffect(() => {
+    if (view !== "project-chat" || !selectedProjectId || loadedThreadProjects[selectedProjectId]) {
+      return;
+    }
+
+    void syncProjectThreads(selectedProjectId).catch((error) => {
+      handleWorkspaceError(error);
+    });
+  }, [loadedThreadProjects, selectedProjectId, view]);
+
+  useEffect(() => {
     if (!selectedProjectId) {
       setSelectedThreadId("");
       return;
@@ -242,6 +476,20 @@ const App = () => {
       setSelectedThreadId(projectThreads[0]?.id ?? "");
     }
   }, [selectedProjectId, selectedThreadId, threadsByProject]);
+
+  useEffect(() => {
+    if (view !== "project-chat" || !selectedProjectId || !selectedThreadId) {
+      return;
+    }
+
+    if (loadedMessagesByThread[selectedThreadId]) {
+      return;
+    }
+
+    void syncThreadMessages(selectedProjectId, selectedThreadId).catch((error) => {
+      handleWorkspaceError(error);
+    });
+  }, [loadedMessagesByThread, selectedProjectId, selectedThreadId, view]);
 
   useEffect(() => {
     if (!selectedProjectId) {
@@ -268,24 +516,54 @@ const App = () => {
     };
   }, [documentsByProject, selectedProjectId]);
 
+  useEffect(() => {
+    setExpandedReasoningByMessageId({});
+  }, [selectedThreadId, view]);
+
   const selectedProject =
     projectList.find((project) => project.id === selectedProjectId) ?? projectList[0] ?? null;
   const selectedDocuments = selectedProject ? documentsByProject[selectedProject.id] ?? [] : [];
   const selectedThreads = selectedProject ? threadsByProject[selectedProject.id] ?? [] : [];
-  const selectedThread = selectedThreads.find((thread) => thread.id === selectedThreadId) ?? selectedThreads[0] ?? null;
+  const selectedThread =
+    selectedThreads.find((thread) => thread.id === selectedThreadId) ?? selectedThreads[0] ?? null;
+  const selectedThreadMessages = selectedThread ? messagesByThread[selectedThread.id] ?? [] : [];
   const selectedProvider =
     providerList.find((provider) => provider.id === selectedProviderId) ?? providerList[0];
-
+  const isChatProviderImplemented = selectedProvider?.id === "lm-studio";
+  const isLoadingSelectedThreadMessages = selectedThread
+    ? !loadedMessagesByThread[selectedThread.id]
+    : false;
   const showTabs = view === "projects" || view === "settings";
+
+  const renderMessages = selectedThread
+    ? [
+        ...selectedThreadMessages,
+        ...(pendingUserMessage && pendingUserMessage.threadId === selectedThread.id
+          ? [pendingUserMessage]
+          : []),
+        ...(streamingAssistant && streamingAssistant.threadId === selectedThread.id
+          ? [
+              {
+                id: "streaming-assistant",
+                threadId: selectedThread.id,
+                senderType: "assistant" as const,
+                role: streamingAssistant.role,
+                content: streamingAssistant.content,
+                reasoningContent: streamingAssistant.reasoningContent,
+                citations: [],
+                createdAt: streamingAssistant.createdAt
+              }
+            ]
+          : [])
+      ]
+    : [];
 
   const handleSelectTopLevel = (target: "projects" | "settings") => {
     setView(target);
   };
 
   const handleOpenProject = (projectId: string = selectedProjectId) => {
-    const nextThreads = threadsByProject[projectId] ?? [];
     setSelectedProjectId(projectId);
-    setSelectedThreadId(nextThreads[0]?.id ?? "");
     setView("project-files");
   };
 
@@ -316,9 +594,12 @@ const App = () => {
       };
       const project = await createWorkspaceProject(payload);
 
+      setBackendDialogMessage("");
       setProjectList((current) => [project, ...current]);
       setDocumentsByProject((current) => ({ ...current, [project.id]: [] }));
       setThreadsByProject((current) => ({ ...current, [project.id]: [] }));
+      setMessagesByThread((current) => ({ ...current }));
+      setLoadedThreadProjects((current) => ({ ...current, [project.id]: true }));
       setSelectedProjectId(project.id);
       setSelectedThreadId("");
       setIsCreateProjectDialogOpen(false);
@@ -339,6 +620,7 @@ const App = () => {
     try {
       setWorkspaceError("");
       await deleteProjectDocument(selectedProject.id, documentId);
+      setBackendDialogMessage("");
       setDocumentsByProject((current) => ({
         ...current,
         [selectedProject.id]: (current[selectedProject.id] ?? []).filter(
@@ -358,6 +640,7 @@ const App = () => {
     try {
       setWorkspaceError("");
       const document = await reindexProjectDocument(selectedProject.id, documentId);
+      setBackendDialogMessage("");
       setDocumentsByProject((current) => ({
         ...current,
         [selectedProject.id]: (current[selectedProject.id] ?? []).map((entry) =>
@@ -374,28 +657,48 @@ const App = () => {
       return;
     }
 
-    const firstThread = threadsByProject[selectedProject.id]?.[0];
     if (target === "project-chat") {
-      setSelectedThreadId((current) => current || firstThread?.id || "");
       setIsThreadPanelOpen(isWideChatLayout);
     }
 
     setView(target);
   };
 
-  const handleCreateThread = () => {
-    if (!selectedProject) {
+  const handleCreateThread = async () => {
+    if (!selectedProject || isCreatingThread || isSendingMessage) {
       return;
     }
 
-    const nextCount = (threadsByProject[selectedProject.id] ?? []).length + 1;
-    const nextThread = buildStarterThread(selectedProject.id, nextCount);
-
-    setThreadsByProject((current) => ({
-      ...current,
-      [selectedProject.id]: [nextThread, ...(current[selectedProject.id] ?? [])]
-    }));
-    setSelectedThreadId(nextThread.id);
+    try {
+      setIsCreatingThread(true);
+      setWorkspaceError("");
+      const thread = await createProjectThread(selectedProject.id);
+      setBackendDialogMessage("");
+      setThreadsByProject((current) => ({
+        ...current,
+        [selectedProject.id]: upsertThread(current[selectedProject.id] ?? [], thread)
+      }));
+      setLoadedThreadProjects((current) => ({
+        ...current,
+        [selectedProject.id]: true
+      }));
+      setMessagesByThread((current) => ({
+        ...current,
+        [thread.id]: []
+      }));
+      setLoadedMessagesByThread((current) => ({
+        ...current,
+        [thread.id]: true
+      }));
+      setSelectedThreadId(thread.id);
+      setComposerValue("");
+      setStreamingAssistant(null);
+      setPendingUserMessage(null);
+    } catch (error) {
+      handleWorkspaceError(error);
+    } finally {
+      setIsCreatingThread(false);
+    }
   };
 
   const handleToggleThreadPanel = () => {
@@ -403,7 +706,14 @@ const App = () => {
   };
 
   const handleSelectThread = (threadId: string) => {
+    if (isSendingMessage) {
+      return;
+    }
+
     setSelectedThreadId(threadId);
+    setComposerValue("");
+    setPendingUserMessage(null);
+    setStreamingAssistant(null);
 
     if (!isWideChatLayout) {
       setIsThreadPanelOpen(false);
@@ -436,6 +746,7 @@ const App = () => {
       setIsSavingModelSettings(true);
       setWorkspaceError("");
       const saved = await updateModelSettings(payload);
+      setBackendDialogMessage("");
       setProviderList(saved.providers);
       setSelectedProviderId(saved.selectedProviderId);
     } catch (error) {
@@ -480,6 +791,7 @@ const App = () => {
       });
 
       const nextDocuments = await importProjectDocuments(selectedProject.id, { items });
+      setBackendDialogMessage("");
       setDocumentsByProject((current) => ({
         ...current,
         [selectedProject.id]: nextDocuments
@@ -494,6 +806,138 @@ const App = () => {
     }
   };
 
+  const handleRetryBackend = () => {
+    void loadWorkspace();
+  };
+
+  const handleToggleReasoning = (messageId: string) => {
+    if (streamingAssistant && messageId === "streaming-assistant") {
+      setStreamingAssistant((current) =>
+        current
+          ? {
+              ...current,
+              reasoningCollapsed: !current.reasoningCollapsed
+            }
+          : current
+      );
+      return;
+    }
+
+    setExpandedReasoningByMessageId((current) => ({
+      ...current,
+      [messageId]: !current[messageId]
+    }));
+  };
+
+  const handleSendMessage = async () => {
+    if (
+      !selectedProject ||
+      !selectedThread ||
+      !selectedProvider ||
+      !isChatProviderImplemented ||
+      isSendingMessage
+    ) {
+      return;
+    }
+
+    const content = composerValue.trim();
+    if (!content) {
+      return;
+    }
+
+    const optimisticUserMessage = buildPendingUserMessage(selectedThread.id, content);
+    setComposerValue("");
+    setWorkspaceError("");
+    setPendingUserMessage(optimisticUserMessage);
+    setStreamingAssistant(buildStreamingAssistantState(selectedThread.id, selectedProvider.chattingModel));
+    setIsSendingMessage(true);
+
+    try {
+      await streamThreadMessage(selectedProject.id, selectedThread.id, { content }, (event) => {
+        if (event.type === "reasoning.delta") {
+          setStreamingAssistant((current) =>
+            current && current.threadId === selectedThread.id
+              ? {
+                  ...current,
+                  reasoningContent: `${current.reasoningContent}${event.content}`,
+                  reasoningCollapsed: false
+                }
+              : current
+          );
+          return;
+        }
+
+        if (event.type === "reasoning.end") {
+          setStreamingAssistant((current) =>
+            current && current.threadId === selectedThread.id
+              ? {
+                  ...current,
+                  reasoningCollapsed: true
+                }
+              : current
+          );
+          return;
+        }
+
+        if (event.type === "message.delta") {
+          setStreamingAssistant((current) =>
+            current && current.threadId === selectedThread.id
+              ? {
+                  ...current,
+                  content: `${current.content}${event.content}`
+                }
+              : current
+          );
+          return;
+        }
+
+        if (event.type === "completed") {
+          setBackendDialogMessage("");
+          setThreadsByProject((current) => ({
+            ...current,
+            [selectedProject.id]: upsertThread(current[selectedProject.id] ?? [], event.thread)
+          }));
+          setMessagesByThread((current) => ({
+            ...current,
+            [selectedThread.id]: mergeCompletedMessages(
+              (current[selectedThread.id] ?? []).filter(
+                (message) => message.id !== optimisticUserMessage.id
+              ),
+              event.userMessage,
+              event.assistantMessage
+            )
+          }));
+          setLoadedMessagesByThread((current) => ({
+            ...current,
+            [selectedThread.id]: true
+          }));
+          setPendingUserMessage(null);
+          setStreamingAssistant(null);
+        }
+      });
+    } catch (error) {
+      let syncedUserMessage = false;
+
+      try {
+        await Promise.all([
+          syncProjectThreads(selectedProject.id),
+          syncThreadMessages(selectedProject.id, selectedThread.id)
+        ]);
+        syncedUserMessage = true;
+      } catch {
+        // Ignore sync failures here and let the shared error handler surface the original error.
+      }
+
+      if (syncedUserMessage) {
+        setPendingUserMessage(null);
+      }
+
+      handleWorkspaceError(error);
+    } finally {
+      setIsSendingMessage(false);
+    }
+  };
+
   const renderWorkspaceError = () => {
     if (!workspaceError) {
       return null;
@@ -502,6 +946,32 @@ const App = () => {
     return (
       <div className="status-banner" role="alert">
         {workspaceError}
+      </div>
+    );
+  };
+
+  const renderBackendDialog = () => {
+    if (!backendDialogMessage) {
+      return null;
+    }
+
+    return (
+      <div className="dialog-backdrop" role="presentation">
+        <div
+          aria-describedby="backend-dialog-description"
+          aria-labelledby="backend-dialog-title"
+          aria-modal="true"
+          className="dialog-card"
+          role="dialog"
+        >
+          <h2 id="backend-dialog-title">Backend Unreachable</h2>
+          <p id="backend-dialog-description">{backendDialogMessage}</p>
+          <div className="dialog-actions">
+            <button className="primary-action" onClick={handleRetryBackend} type="button">
+              Retry
+            </button>
+          </div>
+        </div>
       </div>
     );
   };
@@ -679,8 +1149,10 @@ const App = () => {
           <button
             aria-pressed={thread.id === selectedThread?.id}
             className={`thread-item ${thread.id === selectedThread?.id ? "thread-item--active" : ""}`}
+            disabled={isSendingMessage}
             key={thread.id}
             onClick={() => handleSelectThread(thread.id)}
+            title={thread.summary || undefined}
             type="button"
           >
             <span className="thread-item__title">{thread.title}</span>
@@ -688,6 +1160,65 @@ const App = () => {
         ))}
       </div>
     );
+  };
+
+  const renderReasoningBlock = (
+    messageId: string,
+    reasoningContent: string,
+    isCollapsed: boolean
+  ) => {
+    if (!reasoningContent.trim()) {
+      return null;
+    }
+
+    return (
+      <div className="message-reasoning">
+        <button
+          aria-expanded={!isCollapsed}
+          className="message-reasoning__toggle"
+          onClick={() => handleToggleReasoning(messageId)}
+          type="button"
+        >
+          {isCollapsed ? "Show thinking process" : "Hide thinking process"}
+        </button>
+        {!isCollapsed ? (
+          <div className="message-reasoning__body">
+            <span className="message-reasoning__label">Thinking process:</span>
+            <p>{reasoningContent}</p>
+          </div>
+        ) : null}
+      </div>
+    );
+  };
+
+  const renderCitations = (citations: CitationRecord[]) => {
+    if (citations.length === 0) {
+      return null;
+    }
+
+    return (
+      <div className="message-citations">
+        <span className="message-citations__label">Sources</span>
+        <ul className="message-citations__list">
+          {citations.map((citation, index) => (
+            <li className="message-citations__item" key={`${citation.documentId}-${citation.pageNumber}-${citation.chunkIndex}-${index}`}>
+              <span className="message-citations__title">
+                [{index + 1}] {citation.documentName} · page {citation.pageNumber}
+              </span>
+              <p>{citation.snippet}</p>
+            </li>
+          ))}
+        </ul>
+      </div>
+    );
+  };
+
+  const renderMessageContent = (message: ChatMessageRecord) => {
+    if (message.senderType === "assistant") {
+      return <div className="message-bubble__markdown">{renderMarkdownBlocks(message.content)}</div>;
+    }
+
+    return <p>{message.content}</p>;
   };
 
   const renderChatView = () => {
@@ -707,7 +1238,12 @@ const App = () => {
         </button>
 
         <header className="project-toolbar">
-          <button className="ghost-action" onClick={() => setView("projects")} type="button">
+          <button
+            className="ghost-action"
+            disabled={isSendingMessage}
+            onClick={() => setView("projects")}
+            type="button"
+          >
             Back
           </button>
 
@@ -719,6 +1255,7 @@ const App = () => {
             <button
               aria-pressed={false}
               className="project-tabs__button"
+              disabled={isSendingMessage}
               onClick={() => handleSelectProjectView("project-files")}
               type="button"
             >
@@ -745,7 +1282,8 @@ const App = () => {
               <div className="thread-sidebar__header">
                 <button
                   className="secondary-action secondary-action--compact"
-                  onClick={handleCreateThread}
+                  disabled={isCreatingThread || isSendingMessage}
+                  onClick={() => void handleCreateThread()}
                   type="button"
                 >
                   New Thread
@@ -766,26 +1304,72 @@ const App = () => {
                 </header>
 
                 <div className="message-stream message-stream--scroll">
-                  {selectedThread.messages.map((message) => (
-                    <article
-                      className={`message-bubble message-bubble--${message.role}`}
-                      key={message.id}
-                    >
-                      <p>{message.content}</p>
-                    </article>
-                  ))}
+                  {isLoadingSelectedThreadMessages ? (
+                    <section className="empty-panel">
+                      <h2>Loading conversation</h2>
+                      <p>Reading the saved chat history for this thread.</p>
+                    </section>
+                  ) : renderMessages.length > 0 ? (
+                    renderMessages.map((message) => {
+                      const isStreamingMessage = message.id === "streaming-assistant";
+                      const reasoningCollapsed = isStreamingMessage
+                        ? (streamingAssistant?.reasoningCollapsed ?? true)
+                        : !expandedReasoningByMessageId[message.id];
+
+                      return (
+                        <article
+                          className={`message-bubble message-bubble--${message.senderType}`}
+                          key={message.id}
+                        >
+                          <span className="message-bubble__role">{message.role}</span>
+                          {renderReasoningBlock(
+                            message.id,
+                            message.reasoningContent,
+                            reasoningCollapsed
+                          )}
+                          {renderMessageContent(message)}
+                          {message.senderType === "assistant" ? renderCitations(message.citations) : null}
+                        </article>
+                      );
+                    })
+                  ) : (
+                    <section className="empty-panel">
+                      <h2>No messages yet</h2>
+                      <p>Start the conversation when you are ready.</p>
+                    </section>
+                  )}
                 </div>
 
                 <footer className="composer-card">
                   <textarea
                     className="composer-card__input"
+                    disabled={!isChatProviderImplemented || isSendingMessage}
                     id="chat-composer"
-                    placeholder="Summarize the files that still need reindexing."
+                    onChange={(event) => setComposerValue(event.target.value)}
+                    placeholder={
+                      isChatProviderImplemented
+                        ? "Ask a question about your project."
+                        : `${selectedProvider?.name ?? "Selected provider"} (not implemented yet)`
+                    }
                     rows={4}
+                    value={composerValue}
                   />
                   <div className="composer-card__footer">
-                    <span>Threads stay grouped by project.</span>
-                    <button className="primary-action" type="button">
+                    <span>
+                      {isChatProviderImplemented
+                        ? "Threads stay grouped by project."
+                        : `${selectedProvider?.name ?? "This provider"} (not implemented yet)`}
+                    </span>
+                    <button
+                      className="primary-action"
+                      disabled={
+                        !isChatProviderImplemented ||
+                        isSendingMessage ||
+                        composerValue.trim().length === 0
+                      }
+                      onClick={() => void handleSendMessage()}
+                      type="button"
+                    >
                       Send
                     </button>
                   </div>
@@ -794,7 +1378,7 @@ const App = () => {
             ) : (
               <div className="empty-panel">
                 <h2>No threads yet</h2>
-                <p>Create a local thread to sketch questions while the backend indexing flow is still pending.</p>
+                <p>Create a saved thread to start a conversation for this project.</p>
               </div>
             )}
           </section>
@@ -812,7 +1396,8 @@ const App = () => {
               <div className="thread-sidebar__header">
                 <button
                   className="secondary-action secondary-action--compact"
-                  onClick={handleCreateThread}
+                  disabled={isCreatingThread || isSendingMessage}
+                  onClick={() => void handleCreateThread()}
                   type="button"
                 >
                   New Thread
@@ -841,9 +1426,7 @@ const App = () => {
             <label className="form-field">
               <span>Provider</span>
               <select
-                onChange={(event) =>
-                  setSelectedProviderId(event.target.value as ProviderDraft["id"])
-                }
+                onChange={(event) => setSelectedProviderId(event.target.value as ProviderDraft["id"])}
                 value={selectedProviderId}
               >
                 {providerList.map((provider) => (
@@ -866,9 +1449,7 @@ const App = () => {
             <label className="form-field">
               <span>Embedding model</span>
               <input
-                onChange={(event) =>
-                  handleUpdateProviderField("embeddingModel", event.target.value)
-                }
+                onChange={(event) => handleUpdateProviderField("embeddingModel", event.target.value)}
                 type="text"
                 value={selectedProvider.embeddingModel}
               />
@@ -877,9 +1458,7 @@ const App = () => {
             <label className="form-field">
               <span>Chatting model</span>
               <input
-                onChange={(event) =>
-                  handleUpdateProviderField("chattingModel", event.target.value)
-                }
+                onChange={(event) => handleUpdateProviderField("chattingModel", event.target.value)}
                 type="text"
                 value={selectedProvider.chattingModel}
               />
@@ -934,127 +1513,85 @@ const App = () => {
   };
 
   const renderImportView = () => {
-    const handleDragOver = (event: React.DragEvent) => {
-      event.preventDefault();
-      setIsDragging(true);
-    };
-
-    const handleDragLeave = () => {
-      setIsDragging(false);
-    };
-
     if (!selectedProject) {
       return null;
     }
 
-    const processFiles = (fileList: FileList | null) => {
-      if (!fileList) {
-        return;
-      }
-
-      const nextFiles = Array.from(fileList);
-      setFiles((current) => {
-        const combined = [...current, ...nextFiles];
-
-        return combined.filter((file, index, self) => {
-          const key = resolveFilePath(file) || file.name;
-          return index === self.findIndex((candidate) => (resolveFilePath(candidate) || candidate.name) === key);
-        });
-      });
-    };
-
-    const handleDrop = (event: React.DragEvent) => {
-      event.preventDefault();
-      setIsDragging(false);
-      processFiles(event.dataTransfer.files);
-    };
-
-    const handleSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
-      processFiles(event.target.files);
-    };
-
-    const handleRemoveFile = (indexToRemove: number) => {
-      setFiles((current) => current.filter((_, index) => index !== indexToRemove));
-    };
-
     return (
-      <section className="project-page">
+      <section className="project-page project-page--locked">
         <header className="project-toolbar">
-          <button className="ghost-action" onClick={() => setView("project-files")} type="button">
+          <button className="ghost-action" onClick={() => handleSelectProjectView("project-files")} type="button">
             Back
           </button>
-          <h1>Import Files</h1>
+
+          <div className="project-toolbar__title">
+            <h1>{selectedProject.name}</h1>
+          </div>
         </header>
 
         {renderWorkspaceError()}
 
-        <div className="import-card" id="import-section">
-          <h2 className="upload-title">Upload Files</h2>
-
-          <div className="import-drop-area">
-            <label
-              className={`dropzone ${isDragging ? "dropzone--dragging" : ""}`}
-              onDrop={handleDrop}
-              onDragLeave={handleDragLeave}
-              onDragOver={handleDragOver}
+        <section className="project-body">
+          <section className="import-shell">
+            <div
+              className={`import-dropzone ${isDragging ? "import-dropzone--active" : ""}`}
+              onDragEnter={(event) => {
+                event.preventDefault();
+                setIsDragging(true);
+              }}
+              onDragLeave={(event) => {
+                event.preventDefault();
+                setIsDragging(false);
+              }}
+              onDragOver={(event) => {
+                event.preventDefault();
+                setIsDragging(true);
+              }}
+              onDrop={(event) => {
+                event.preventDefault();
+                setIsDragging(false);
+                const droppedFiles = Array.from(event.dataTransfer.files ?? []);
+                setFiles(droppedFiles);
+              }}
             >
-              <input
-                accept=".pdf"
-                hidden
-                multiple
-                onChange={handleSelect}
-                type="file"
-              />
+              <img alt="" className="import-dropzone__icon" src="/dragndroparrow.png" />
+              <p>Drag PDF files here or choose them from disk.</p>
+              <label className="secondary-action">
+                Select Files
+                <input
+                  accept="application/pdf"
+                  multiple
+                  onChange={(event) => setFiles(Array.from(event.target.files ?? []))}
+                  type="file"
+                />
+              </label>
+            </div>
 
-              {files.length === 0 ? (
-                <div className="dropzone__empty-state">
-                  <p className="dropzone__text">Drag and drop files or click the arrow</p>
-
-                  <img
-                    alt="Upload"
-                    className="dropzone__image"
-                    src="/dragndroparrow.png"
-                  />
-
-                  <p className="dropzone__text">Accepted Formats: PDF</p>
-                </div>
-              ) : (
-                <ul className="dropzone__file-list">
-                  {files.slice(0, 5).map((file, index) => (
-                    <li className="dropzone__file-item" key={`${file.name}-${index}`}>
-                      <span className="file-name">{file.name}</span>
-                      <button
-                        className="file-remove-btn"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          handleRemoveFile(index);
-                        }}
-                        type="button"
-                      >
-                        X
-                      </button>
-                    </li>
+            <div className="import-selection">
+              <h2>Selected files</h2>
+              {files.length > 0 ? (
+                <ul>
+                  {files.map((file) => (
+                    <li key={`${file.name}-${file.size}`}>{file.name}</li>
                   ))}
-
-                  {files.length > 5 ? (
-                    <li className="dropzone__more">+{files.length - 5} more</li>
-                  ) : null}
                 </ul>
+              ) : (
+                <p>No files selected yet.</p>
               )}
-            </label>
-          </div>
+            </div>
 
-          <div className="import-btn-container">
-            <button
-              className="primary-action"
-              disabled={files.length === 0 || isImporting}
-              onClick={() => setIsImportDialogOpen(true)}
-              type="button"
-            >
-              Import
-            </button>
-          </div>
-        </div>
+            <div className="import-actions">
+              <button
+                className="primary-action"
+                disabled={files.length === 0 || isImporting}
+                onClick={() => setIsImportDialogOpen(true)}
+                type="button"
+              >
+                Import
+              </button>
+            </div>
+          </section>
+        </section>
       </section>
     );
   };
@@ -1083,30 +1620,31 @@ const App = () => {
           </header>
 
           <section className="page-frame">
-            {view === "projects" ? renderProjectsView() : renderSettingsView()}
+            {view === "projects" ? renderProjectsView() : null}
+            {view === "settings" ? renderSettingsView() : null}
           </section>
         </>
       ) : null}
 
-      {view === "project-files" ? renderProjectView() : null}
-      {view === "project-chat" ? renderChatView() : null}
-      {view === "project-import" ? renderImportView() : null}
+      {!showTabs ? (
+        <>
+          {view === "project-files" ? renderProjectView() : null}
+          {view === "project-chat" ? renderChatView() : null}
+          {view === "project-import" ? renderImportView() : null}
+        </>
+      ) : null}
 
       {isCreateProjectDialogOpen ? (
-        <div className="dialog-backdrop" role="dialog" aria-labelledby="create-project-title" aria-modal="true">
-          <div className="dialog-card">
-            <button
-              aria-label="Close create project dialog"
-              className="dialog-close"
-              onClick={handleCloseCreateProjectDialog}
-              type="button"
-            >
-              x
-            </button>
-
-            <h2 className="dialog-title" id="create-project-title">
-              Create Project
-            </h2>
+        <div className="dialog-backdrop" role="presentation">
+          <div
+            aria-describedby="create-project-description"
+            aria-labelledby="create-project-title"
+            aria-modal="true"
+            className="dialog-card"
+            role="dialog"
+          >
+            <h2 id="create-project-title">Create Project</h2>
+            <p id="create-project-description">Pick a name for the workspace you want to build.</p>
 
             <label className="form-field" htmlFor="project-name">
               <span>Project name</span>
@@ -1114,15 +1652,17 @@ const App = () => {
                 autoFocus
                 id="project-name"
                 onChange={(event) => setPendingProjectName(event.target.value)}
-                type="text"
                 value={pendingProjectName}
               />
             </label>
 
             <div className="dialog-actions">
+              <button className="ghost-action" onClick={handleCloseCreateProjectDialog} type="button">
+                Cancel
+              </button>
               <button
                 className="primary-action"
-                disabled={pendingProjectName.trim().length === 0 || isCreatingProject}
+                disabled={isCreatingProject || pendingProjectName.trim().length === 0}
                 onClick={() => void handleCreateProject(pendingProjectName)}
                 type="button"
               >
@@ -1134,88 +1674,38 @@ const App = () => {
       ) : null}
 
       {isImportDialogOpen ? (
-        <div
-          aria-labelledby="import-warning-title"
-          aria-modal="true"
-          className="dialog-backdrop"
-          role="dialog"
-        >
-          <div className="dialog-card">
-            <button
-              aria-label="Close import dialog"
-              className="dialog-close"
-              onClick={() => setIsImportDialogOpen(false)}
-              type="button"
-            >
-              x
-            </button>
-
-            <h2 className="dialog-title" id="import-warning-title">
-              WARNING
-            </h2>
-
-            <p className="dialog-text">
-              The uploaded documents may be processed by a Large Language Model (LLM).
-              This may involve sending data to external services.
-            </p>
-
-            <p className="dialog-text dialog-text--warning">
-              Do NOT upload sensitive or personal information.
+        <div className="dialog-backdrop" role="presentation">
+          <div
+            aria-describedby="import-warning-description"
+            aria-labelledby="import-warning-title"
+            aria-modal="true"
+            className="dialog-card"
+            role="dialog"
+          >
+            <h2 id="import-warning-title">Import files?</h2>
+            <p id="import-warning-description">
+              The current importer stores file paths locally and begins indexing immediately after the
+              records are created.
             </p>
 
             <div className="dialog-actions">
-              <button
-                className="ghost-action"
-                onClick={() => setIsImportDialogOpen(false)}
-                type="button"
-              >
+              <button className="ghost-action" onClick={() => setIsImportDialogOpen(false)} type="button">
                 Cancel
               </button>
-
               <button
                 className="primary-action"
                 disabled={isImporting}
                 onClick={() => void handleImportFiles()}
                 type="button"
               >
-                I Understand & Import
+                I Understand &amp; Import
               </button>
             </div>
           </div>
         </div>
       ) : null}
 
-      {backendDialogMessage ? (
-        <div
-          aria-labelledby="backend-unreachable-title"
-          aria-modal="true"
-          className="dialog-backdrop"
-          role="dialog"
-        >
-          <div className="dialog-card">
-            <h2 className="dialog-title" id="backend-unreachable-title">
-              Backend Unreachable
-            </h2>
-
-            <p className="dialog-text">
-              The desktop app could not reach the local backend. Start the backend and try again.
-            </p>
-
-            <p className="dialog-text dialog-text--warning">{backendDialogMessage}</p>
-
-            <div className="dialog-actions">
-              <button
-                className="primary-action"
-                disabled={isLoadingWorkspace}
-                onClick={() => void loadWorkspace()}
-                type="button"
-              >
-                Retry
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
+      {renderBackendDialog()}
     </main>
   );
 };

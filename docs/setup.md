@@ -56,3 +56,16 @@ To exercise the indexing flow locally:
 1. Start LM Studio's local server.
 2. Ensure an embedding model such as `text-embedding-embeddinggemma-300m` is loaded.
 3. Run the desktop app and import a text-based PDF.
+
+## Local Chat Dependencies
+
+The chat flow uses LM Studio's native `POST /api/v1/chat` endpoint instead of the OpenAI-compatible `/v1/chat/completions` route.
+
+To exercise the chat flow locally:
+
+1. Start LM Studio's local server.
+2. Ensure the selected `Chatting model` is downloaded and loaded in LM Studio.
+3. Keep the provider set to `LM Studio` in the desktop `Settings` page.
+4. Open a project thread and send a message.
+
+If the stored base URL ends with `/v1`, the backend automatically derives the matching native LM Studio chat URL by replacing that suffix with `/api/v1/chat`.

@@ -52,3 +52,31 @@ class ModelSettings(BaseModel):
 
     class Meta:
         table_name = "model_settings"
+
+
+class ChatThread(BaseModel):
+    id = CharField(primary_key=True)
+    project = ForeignKeyField(Project, backref="chat_threads", on_delete="CASCADE", column_name="project_id")
+    title = TextField()
+    summary = TextField(default="")
+    lmstudio_last_response_id = CharField(null=True)
+    created_at = DateTimeField(default=utc_now)
+    updated_at = DateTimeField(default=utc_now)
+
+    class Meta:
+        table_name = "chat_threads"
+
+
+class ChatMessage(BaseModel):
+    id = CharField(primary_key=True)
+    thread = ForeignKeyField(ChatThread, backref="messages", on_delete="CASCADE", column_name="thread_id")
+    sender_type = CharField()
+    role = TextField()
+    content = TextField()
+    reasoning_content = TextField(default="")
+    citations_json = TextField(default="[]")
+    created_at = DateTimeField(default=utc_now)
+
+    class Meta:
+        table_name = "chat_messages"
+        indexes = ((("thread", "created_at"), False),)
