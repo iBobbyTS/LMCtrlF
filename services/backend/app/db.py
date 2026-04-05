@@ -20,6 +20,7 @@ def initialize_database(database_path: str) -> SqliteDatabase:
 
     database_instance = SqliteDatabase(
         resolved_path,
+        check_same_thread=False,
         pragmas={
             "foreign_keys": 1,
             "journal_mode": "wal",

@@ -10,6 +10,9 @@ The shared contract package currently exposes:
 - `DocumentStatus`
 - `ProjectRecord`
 - `DocumentRecord`
+- `ProviderSettingsRecord`
+- `ModelSettingsResponse`
+- `UpdateModelSettingsRequest`
 - `CreateProjectRequest`
 - `ImportDocumentItem`
 - `ImportDocumentsRequest`
@@ -65,9 +68,16 @@ Example request:
 
 Returns all persisted documents for a project.
 
+Each document now includes:
+
+- `status`
+- `progress`
+
+`progress` is an integer from `0` to `100`. The desktop app renders `indexing` rows as `Indexing XX%`.
+
 ### `POST /projects/{projectId}/documents/import`
 
-Imports document metadata for a project, computes an MD5 hash from the source file, and stores the current document status.
+Imports document metadata for a project, computes an MD5 hash from the source file, stores the current document status, and queues new documents for background indexing.
 
 Example request:
 
@@ -90,11 +100,43 @@ Example request:
 - `ready`
 - `file_changed`
 
-The current implementation writes newly imported documents as `queued`. Queue execution, indexing progress, and pause/resume behavior are not implemented yet.
+The current implementation writes newly imported documents as `queued`, then performs PDF text extraction, LM Studio embedding requests, and LanceDB writes in a local background worker.
 
 ### `DELETE /projects/{projectId}/documents/{documentId}`
 
 Deletes a persisted document record from SQLite.
+
+### `POST /projects/{projectId}/documents/{documentId}/reindex`
+
+Deletes the existing LanceDB chunks for the selected document, resets the document to `queued`, and schedules a fresh indexing run.
+
+### `GET /settings/model`
+
+Returns the persisted provider settings used by the desktop app and backend indexing flow.
+
+Example response:
+
+```json
+{
+  "selectedProviderId": "lm-studio",
+  "providers": [
+    {
+      "id": "lm-studio",
+      "name": "LM Studio",
+      "baseUrl": "http://127.0.0.1:1234/v1",
+      "embeddingModel": "text-embedding-embeddinggemma-300m",
+      "chattingModel": "qwen/qwen3-8b",
+      "apiKey": "lm-studio"
+    }
+  ]
+}
+```
+
+### `PUT /settings/model`
+
+Replaces the persisted provider settings payload.
+
+The indexing worker reads the selected provider's `baseUrl`, `embeddingModel`, and `apiKey` at runtime before requesting embeddings.
 
 ## Preload Bridge
 

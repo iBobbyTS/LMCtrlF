@@ -39,8 +39,30 @@ export interface DocumentRecord {
   filePath: string;
   md5: string;
   status: DocumentStatus;
+  progress: number;
   createdAt: string;
   updatedAt: string;
+}
+
+export type ProviderId = "lm-studio" | "openai" | "anthropic";
+
+export interface ProviderSettingsRecord {
+  id: ProviderId;
+  name: string;
+  baseUrl: string;
+  embeddingModel: string;
+  chattingModel: string;
+  apiKey: string;
+}
+
+export interface ModelSettingsResponse {
+  selectedProviderId: ProviderId;
+  providers: ProviderSettingsRecord[];
+}
+
+export interface UpdateModelSettingsRequest {
+  selectedProviderId: ProviderId;
+  providers: ProviderSettingsRecord[];
 }
 
 export interface CreateProjectRequest {

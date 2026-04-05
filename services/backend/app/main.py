@@ -8,24 +8,35 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.health import router as health_router
 from app.api.projects import router as projects_router
+from app.api.settings import router as settings_router
 from app.core.config import Settings, get_settings
 from app.db import close_database, initialize_database
-from app.models import Document, Project
+from app.indexing import IndexingWorker
+from app.lancedb_store import LanceDBStore
+from app.model_settings import ensure_model_settings_record
+from app.models import Document, ModelSettings, Project
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     app_settings = settings or get_settings()
     database = initialize_database(app_settings.database_path)
-    database.create_tables([Project, Document], safe=True)
+    database.create_tables([Project, Document, ModelSettings], safe=True)
+    ensure_model_settings_record()
+    lancedb_store = LanceDBStore(app_settings.lancedb_path)
+    indexing_worker = IndexingWorker(lancedb_store)
 
     @asynccontextmanager
     async def lifespan(_: FastAPI):
+        indexing_worker.start()
         try:
             yield
         finally:
+            indexing_worker.stop()
             close_database()
 
     app = FastAPI(title=app_settings.app_name, lifespan=lifespan)
+    app.state.lancedb_store = lancedb_store
+    app.state.indexing_worker = indexing_worker
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["null"],
@@ -36,6 +47,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     app.include_router(health_router)
     app.include_router(projects_router)
+    app.include_router(settings_router)
     return app
 
 

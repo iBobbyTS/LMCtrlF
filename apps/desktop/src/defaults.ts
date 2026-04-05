@@ -1,3 +1,5 @@
+import type { ProviderId, ProviderSettingsRecord } from "@lmctrlf/shared";
+
 export type MessageRole = "user" | "assistant";
 
 export interface ThreadMessage {
@@ -14,13 +16,7 @@ export interface ChatThread {
   messages: ThreadMessage[];
 }
 
-export interface ProviderDraft {
-  id: "lm-studio" | "openai" | "anthropic";
-  name: string;
-  baseUrl: string;
-  model: string;
-  apiKey: string;
-}
+export interface ProviderDraft extends ProviderSettingsRecord {}
 
 export interface AccessibilityOption {
   id: string;
@@ -34,24 +30,29 @@ export const providerProfiles: ProviderDraft[] = [
     id: "lm-studio",
     name: "LM Studio",
     baseUrl: "http://127.0.0.1:1234/v1",
-    model: "qwen/qwen3-8b",
+    embeddingModel: "text-embedding-embeddinggemma-300m",
+    chattingModel: "qwen/qwen3-8b",
     apiKey: "lm-studio"
   },
   {
     id: "openai",
     name: "OpenAI",
     baseUrl: "https://api.openai.com/v1",
-    model: "gpt-5-mini",
+    embeddingModel: "text-embedding-3-small",
+    chattingModel: "gpt-5-mini",
     apiKey: "sk-live-••••••••"
   },
   {
     id: "anthropic",
     name: "Anthropic",
     baseUrl: "https://api.anthropic.com",
-    model: "claude-sonnet-4-5",
+    embeddingModel: "text-embedding-embeddinggemma-300m",
+    chattingModel: "claude-sonnet-4-5",
     apiKey: "sk-ant-••••••••"
   }
 ];
+
+export const defaultSelectedProviderId: ProviderId = "lm-studio";
 
 export const accessibilityOptions: AccessibilityOption[] = [
   {

@@ -3,6 +3,7 @@ import type {
   DocumentRecord,
   DocumentStatus,
   ImportDocumentItem,
+  ModelSettingsResponse,
   ProjectRecord
 } from "@lmctrlf/shared";
 import { useEffect, useState, type CSSProperties } from "react";
@@ -11,12 +12,16 @@ import {
   checkBackendHealth,
   createWorkspaceProject,
   deleteProjectDocument,
+  getModelSettings,
   importProjectDocuments,
   listProjectDocuments,
-  listProjects
+  listProjects,
+  reindexProjectDocument,
+  updateModelSettings
 } from "./api";
 import {
   accessibilityOptions,
+  defaultSelectedProviderId,
   providerProfiles,
   type AccessibilityOption,
   type ChatThread,
@@ -49,11 +54,18 @@ const documentStatusLabels: Record<DocumentStatus, string> = {
 };
 
 const formatDocumentStatus = (document: DocumentRecord): string => {
+  if (document.status === "indexing") {
+    return `Indexing ${document.progress.toString().padStart(2, "0")}%`;
+  }
   return documentStatusLabels[document.status];
 };
 
 const getErrorMessage = (error: unknown): string => {
   return error instanceof Error ? error.message : "Something went wrong.";
+};
+
+const isBackendConnectionError = (error: unknown): boolean => {
+  return getErrorMessage(error) === "Could not connect to the backend.";
 };
 
 const cloneThreads = (): ThreadMap => ({});
@@ -95,7 +107,9 @@ const App = () => {
   const [selectedProjectId, setSelectedProjectId] = useState("");
   const [selectedThreadId, setSelectedThreadId] = useState("");
   const [providerList, setProviderList] = useState<ProviderDraft[]>(cloneProviders);
-  const [selectedProviderId, setSelectedProviderId] = useState(providerProfiles[0]?.id ?? "lm-studio");
+  const [selectedProviderId, setSelectedProviderId] = useState(
+    providerProfiles[0]?.id ?? defaultSelectedProviderId
+  );
   const [accessibilityList, setAccessibilityList] =
     useState<AccessibilityOption[]>(cloneAccessibility);
   const [isCreateProjectDialogOpen, setIsCreateProjectDialogOpen] = useState(false);
@@ -110,6 +124,29 @@ const App = () => {
   const [workspaceError, setWorkspaceError] = useState("");
   const [isCreatingProject, setIsCreatingProject] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
+  const [isSavingModelSettings, setIsSavingModelSettings] = useState(false);
+
+  const syncProjectDocuments = async (projectId: string): Promise<DocumentRecord[]> => {
+    const nextDocuments = await listProjectDocuments(projectId);
+    setDocumentsByProject((current) => ({
+      ...current,
+      [projectId]: nextDocuments
+    }));
+    return nextDocuments;
+  };
+
+  const handleWorkspaceError = (error: unknown) => {
+    const message = getErrorMessage(error);
+
+    if (isBackendConnectionError(error)) {
+      setWorkspaceError("");
+      setBackendDialogMessage(message);
+      return;
+    }
+
+    setBackendDialogMessage("");
+    setWorkspaceError(message);
+  };
 
   const loadWorkspace = async () => {
     setIsLoadingWorkspace(true);
@@ -131,23 +168,28 @@ const App = () => {
     setBackendDialogMessage("");
 
     try {
-      const nextProjects = await listProjects();
+      const [settings, nextProjects] = await Promise.all([getModelSettings(), listProjects()]);
       const nextDocuments = await Promise.all(
         nextProjects.map(async (project) => [project.id, await listProjectDocuments(project.id)] as const)
       );
 
+      setProviderList(settings.providers);
+      setSelectedProviderId(settings.selectedProviderId);
       setProjectList(nextProjects);
       setDocumentsByProject(Object.fromEntries(nextDocuments));
       setThreadsByProject((current) =>
         Object.fromEntries(nextProjects.map((project) => [project.id, current[project.id] ?? []]))
       );
     } catch (error) {
-      setWorkspaceError(getErrorMessage(error));
-      setProjectList([]);
-      setDocumentsByProject({});
-      setThreadsByProject(cloneThreads());
-      setSelectedProjectId("");
-      setSelectedThreadId("");
+      handleWorkspaceError(error);
+
+      if (!isBackendConnectionError(error)) {
+        setProjectList([]);
+        setDocumentsByProject({});
+        setThreadsByProject(cloneThreads());
+        setSelectedProjectId("");
+        setSelectedThreadId("");
+      }
     } finally {
       setIsLoadingWorkspace(false);
     }
@@ -200,6 +242,31 @@ const App = () => {
       setSelectedThreadId(projectThreads[0]?.id ?? "");
     }
   }, [selectedProjectId, selectedThreadId, threadsByProject]);
+
+  useEffect(() => {
+    if (!selectedProjectId) {
+      return;
+    }
+
+    const selectedProjectDocuments = documentsByProject[selectedProjectId] ?? [];
+    const hasActiveIndexing = selectedProjectDocuments.some(
+      (document) => document.status === "queued" || document.status === "indexing"
+    );
+
+    if (!hasActiveIndexing) {
+      return;
+    }
+
+    const intervalId = window.setInterval(() => {
+      void syncProjectDocuments(selectedProjectId).catch((error) => {
+        handleWorkspaceError(error);
+      });
+    }, 1000);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [documentsByProject, selectedProjectId]);
 
   const selectedProject =
     projectList.find((project) => project.id === selectedProjectId) ?? projectList[0] ?? null;
@@ -258,7 +325,7 @@ const App = () => {
       setPendingProjectName("");
       setView("project-files");
     } catch (error) {
-      setWorkspaceError(getErrorMessage(error));
+      handleWorkspaceError(error);
     } finally {
       setIsCreatingProject(false);
     }
@@ -279,12 +346,27 @@ const App = () => {
         )
       }));
     } catch (error) {
-      setWorkspaceError(getErrorMessage(error));
+      handleWorkspaceError(error);
     }
   };
 
-  const handleReindexDocument = (_documentId: string) => {
-    setWorkspaceError("");
+  const handleReindexDocument = async (documentId: string) => {
+    if (!selectedProject) {
+      return;
+    }
+
+    try {
+      setWorkspaceError("");
+      const document = await reindexProjectDocument(selectedProject.id, documentId);
+      setDocumentsByProject((current) => ({
+        ...current,
+        [selectedProject.id]: (current[selectedProject.id] ?? []).map((entry) =>
+          entry.id === document.id ? document : entry
+        )
+      }));
+    } catch (error) {
+      handleWorkspaceError(error);
+    }
   };
 
   const handleSelectProjectView = (target: "project-files" | "project-chat" | "project-import") => {
@@ -328,7 +410,10 @@ const App = () => {
     }
   };
 
-  const handleUpdateProviderField = (field: "baseUrl" | "model" | "apiKey", value: string) => {
+  const handleUpdateProviderField = (
+    field: "baseUrl" | "embeddingModel" | "chattingModel" | "apiKey",
+    value: string
+  ) => {
     setProviderList((current) =>
       current.map((provider) =>
         provider.id === selectedProviderId
@@ -339,6 +424,25 @@ const App = () => {
           : provider
       )
     );
+  };
+
+  const handleSaveModelSettings = async () => {
+    const payload: ModelSettingsResponse = {
+      selectedProviderId,
+      providers: providerList
+    };
+
+    try {
+      setIsSavingModelSettings(true);
+      setWorkspaceError("");
+      const saved = await updateModelSettings(payload);
+      setProviderList(saved.providers);
+      setSelectedProviderId(saved.selectedProviderId);
+    } catch (error) {
+      handleWorkspaceError(error);
+    } finally {
+      setIsSavingModelSettings(false);
+    }
   };
 
   const handleToggleAccessibility = (optionId: string) => {
@@ -384,7 +488,7 @@ const App = () => {
       setIsImportDialogOpen(false);
       setView("project-files");
     } catch (error) {
-      setWorkspaceError(getErrorMessage(error));
+      handleWorkspaceError(error);
     } finally {
       setIsImporting(false);
     }
@@ -760,11 +864,24 @@ const App = () => {
             </label>
 
             <label className="form-field">
-              <span>Model</span>
+              <span>Embedding model</span>
               <input
-                onChange={(event) => handleUpdateProviderField("model", event.target.value)}
+                onChange={(event) =>
+                  handleUpdateProviderField("embeddingModel", event.target.value)
+                }
                 type="text"
-                value={selectedProvider.model}
+                value={selectedProvider.embeddingModel}
+              />
+            </label>
+
+            <label className="form-field">
+              <span>Chatting model</span>
+              <input
+                onChange={(event) =>
+                  handleUpdateProviderField("chattingModel", event.target.value)
+                }
+                type="text"
+                value={selectedProvider.chattingModel}
               />
             </label>
 
@@ -776,6 +893,17 @@ const App = () => {
                 value={selectedProvider.apiKey}
               />
             </label>
+
+            <div className="settings-actions">
+              <button
+                className="primary-action"
+                disabled={isSavingModelSettings}
+                onClick={() => void handleSaveModelSettings()}
+                type="button"
+              >
+                Save settings
+              </button>
+            </div>
           </div>
         </section>
 

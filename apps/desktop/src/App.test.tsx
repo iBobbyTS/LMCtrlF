@@ -25,8 +25,21 @@ type MockDocument = {
   filePath: string;
   md5: string;
   status: "queued" | "indexing" | "paused" | "ready" | "file_changed";
+  progress: number;
   createdAt: string;
   updatedAt: string;
+};
+
+type MockSettings = {
+  selectedProviderId: "lm-studio" | "openai" | "anthropic";
+  providers: Array<{
+    id: "lm-studio" | "openai" | "anthropic";
+    name: string;
+    baseUrl: string;
+    embeddingModel: string;
+    chattingModel: string;
+    apiKey: string;
+  }>;
 };
 
 const createJsonResponse = (payload: unknown, status = 200) => {
@@ -41,11 +54,44 @@ const createJsonResponse = (payload: unknown, status = 200) => {
 const createFetchMock = (seed?: {
   projects?: MockProject[];
   documentsByProject?: Record<string, MockDocument[]>;
+  documentSequencesByProject?: Record<string, MockDocument[][]>;
   healthSequence?: Array<"ok" | "offline">;
+  settings?: MockSettings;
+  offlinePaths?: string[];
 }) => {
   let projectCounter = (seed?.projects?.length ?? 0) + 1;
   let documentCounter = 1;
   const healthSequence = [...(seed?.healthSequence ?? ["ok"])];
+  const offlinePaths = new Set(seed?.offlinePaths ?? []);
+  let settings: MockSettings = seed?.settings ?? {
+    selectedProviderId: "lm-studio",
+    providers: [
+      {
+        id: "lm-studio",
+        name: "LM Studio",
+        baseUrl: "http://127.0.0.1:1234/v1",
+        embeddingModel: "text-embedding-embeddinggemma-300m",
+        chattingModel: "qwen/qwen3-8b",
+        apiKey: "lm-studio"
+      },
+      {
+        id: "openai",
+        name: "OpenAI",
+        baseUrl: "https://api.openai.com/v1",
+        embeddingModel: "text-embedding-3-small",
+        chattingModel: "gpt-5-mini",
+        apiKey: "sk-live-••••••••"
+      },
+      {
+        id: "anthropic",
+        name: "Anthropic",
+        baseUrl: "https://api.anthropic.com",
+        embeddingModel: "text-embedding-embeddinggemma-300m",
+        chattingModel: "claude-sonnet-4-5",
+        apiKey: "sk-ant-••••••••"
+      }
+    ]
+  };
   const projects = [...(seed?.projects ?? [])];
   const documentsByProject = Object.fromEntries(
     Object.entries(seed?.documentsByProject ?? {}).map(([projectId, documents]) => [
@@ -53,11 +99,21 @@ const createFetchMock = (seed?: {
       [...documents]
     ])
   ) as Record<string, MockDocument[]>;
+  const documentSequencesByProject = Object.fromEntries(
+    Object.entries(seed?.documentSequencesByProject ?? {}).map(([projectId, sequence]) => [
+      projectId,
+      sequence.map((documents) => [...documents])
+    ])
+  ) as Record<string, MockDocument[][]>;
 
   return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const requestUrl = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
     const url = new URL(requestUrl);
     const method = init?.method ?? "GET";
+
+    if (offlinePaths.has(url.pathname)) {
+      throw new TypeError("Failed to fetch");
+    }
 
     if (url.pathname === "/health" && method === "GET") {
       const nextHealthState =
@@ -72,6 +128,15 @@ const createFetchMock = (seed?: {
 
     if (url.pathname === "/projects" && method === "GET") {
       return createJsonResponse(projects);
+    }
+
+    if (url.pathname === "/settings/model" && method === "GET") {
+      return createJsonResponse(settings);
+    }
+
+    if (url.pathname === "/settings/model" && method === "PUT") {
+      settings = JSON.parse(String(init?.body ?? "{}")) as MockSettings;
+      return createJsonResponse(settings);
     }
 
     if (url.pathname === "/projects" && method === "POST") {
@@ -109,6 +174,7 @@ const createFetchMock = (seed?: {
             ...currentDocuments[existingIndex],
             name: item.name,
             status: "queued",
+            progress: 0,
             updatedAt: new Date(Date.UTC(2026, 3, 3, 12, 0, documentCounter)).toISOString()
           };
           return;
@@ -122,6 +188,7 @@ const createFetchMock = (seed?: {
           filePath: item.filePath,
           md5: `md5-${documentCounter}`,
           status: "queued",
+          progress: 0,
           createdAt: timestamp,
           updatedAt: timestamp
         });
@@ -135,6 +202,11 @@ const createFetchMock = (seed?: {
     const listDocumentsMatch = url.pathname.match(/^\/projects\/([^/]+)\/documents$/);
     if (listDocumentsMatch && method === "GET") {
       const [, projectId] = listDocumentsMatch;
+      const sequence = documentSequencesByProject[projectId];
+      if (sequence && sequence.length > 0) {
+        const nextDocuments = sequence.length > 1 ? sequence.shift() ?? [] : sequence[0] ?? [];
+        documentsByProject[projectId] = [...nextDocuments];
+      }
       return createJsonResponse(documentsByProject[projectId] ?? []);
     }
 
@@ -145,6 +217,29 @@ const createFetchMock = (seed?: {
         (document) => document.id !== documentId
       );
       return new Response(null, { status: 204 });
+    }
+
+    const reindexDocumentMatch = url.pathname.match(/^\/projects\/([^/]+)\/documents\/([^/]+)\/reindex$/);
+    if (reindexDocumentMatch && method === "POST") {
+      const [, projectId, documentId] = reindexDocumentMatch;
+      const currentDocument = (documentsByProject[projectId] ?? []).find(
+        (document) => document.id === documentId
+      );
+      if (!currentDocument) {
+        return new Response("Not found", { status: 404 });
+      }
+
+      const updatedDocument: MockDocument = {
+        ...currentDocument,
+        status: "queued",
+        progress: 0,
+        updatedAt: new Date(Date.UTC(2026, 3, 3, 12, 0, documentCounter)).toISOString()
+      };
+      documentCounter += 1;
+      documentsByProject[projectId] = (documentsByProject[projectId] ?? []).map((document) =>
+        document.id === documentId ? updatedDocument : document
+      );
+      return createJsonResponse(updatedDocument);
     }
 
     return new Response("Not found", { status: 404 });
@@ -188,7 +283,8 @@ describe("App", () => {
     expect(await screen.findByText("No projects yet")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Create Project" })).toBeInTheDocument();
     expect(fetchMock.mock.calls[0]?.[0]).toBe("http://127.0.0.1:8000/health");
-    expect(fetchMock.mock.calls[1]?.[0]).toBe("http://127.0.0.1:8000/projects");
+    expect(fetchMock.mock.calls[1]?.[0]).toBe("http://127.0.0.1:8000/settings/model");
+    expect(fetchMock.mock.calls[2]?.[0]).toBe("http://127.0.0.1:8000/projects");
   });
 
   it("shows a retry-only backend unreachable dialog when startup health checks fail", async () => {
@@ -201,6 +297,19 @@ describe("App", () => {
     expect(within(dialog).getByRole("button", { name: "Retry" })).toBeInTheDocument();
     expect(within(dialog).queryAllByRole("button")).toHaveLength(1);
     expect(screen.queryByText("No projects yet")).not.toBeInTheDocument();
+  });
+
+  it("reuses the backend unreachable dialog when a later startup request cannot reach the backend", async () => {
+    const fetchMock = createFetchMock({ offlinePaths: ["/settings/model"] });
+    globalThis.fetch = fetchMock as typeof fetch;
+
+    render(<App />);
+
+    const dialog = await screen.findByRole("dialog", { name: "Backend Unreachable" });
+    expect(within(dialog).getByRole("button", { name: "Retry" })).toBeInTheDocument();
+    expect(within(dialog).queryAllByRole("button")).toHaveLength(1);
+    expect(within(dialog).getByText("Could not connect to the backend.")).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
   it("retries workspace loading after the backend becomes reachable again", async () => {
@@ -395,6 +504,7 @@ describe("App", () => {
     });
 
     expect(screen.getByDisplayValue("https://api.anthropic.com")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("text-embedding-embeddinggemma-300m")).toBeInTheDocument();
     expect(screen.getByDisplayValue("claude-sonnet-4-5")).toBeInTheDocument();
 
     const reduceMotion = screen.getByRole("checkbox", { name: /Reduce motion/i });
@@ -403,5 +513,124 @@ describe("App", () => {
     fireEvent.click(reduceMotion);
 
     expect(reduceMotion).toBeChecked();
+  });
+
+  it("persists embedding and chatting model settings through the backend", async () => {
+    const fetchMock = createFetchMock();
+    globalThis.fetch = fetchMock as typeof fetch;
+
+    render(<App />);
+
+    await screen.findByText("No projects yet");
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+
+    fireEvent.change(screen.getByLabelText("Embedding model"), {
+      target: { value: "custom-embedding-model" }
+    });
+    fireEvent.change(screen.getByLabelText("Chatting model"), {
+      target: { value: "custom-chat-model" }
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save settings" }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        "http://127.0.0.1:8000/settings/model",
+        expect.objectContaining({ method: "PUT" })
+      );
+    });
+  });
+
+  it(
+    "polls indexing progress until a document becomes ready",
+    async () => {
+      const seedProject: MockProject = {
+        id: "project-1",
+        name: "Field Notes",
+        accent: "#c2410c",
+        createdAt: "2026-04-03T12:00:00.000Z",
+        updatedAt: "2026-04-03T12:00:00.000Z"
+      };
+      const queuedDocument: MockDocument = {
+        id: "document-1",
+        projectId: "project-1",
+        name: "launch-overview.pdf",
+        filePath: "/tmp/launch-overview.pdf",
+        md5: "md5-1",
+        status: "queued",
+        progress: 0,
+        createdAt: "2026-04-03T12:00:00.000Z",
+        updatedAt: "2026-04-03T12:00:00.000Z"
+      };
+      const indexingDocument: MockDocument = {
+        ...queuedDocument,
+        status: "indexing",
+        progress: 42,
+        updatedAt: "2026-04-03T12:01:00.000Z"
+      };
+      const readyDocument: MockDocument = {
+        ...queuedDocument,
+        status: "ready",
+        progress: 100,
+        updatedAt: "2026-04-03T12:02:00.000Z"
+      };
+      const fetchMock = createFetchMock({
+        projects: [seedProject],
+        documentsByProject: { "project-1": [queuedDocument] },
+        documentSequencesByProject: {
+          "project-1": [[queuedDocument], [indexingDocument], [readyDocument]]
+        }
+      });
+      globalThis.fetch = fetchMock as typeof fetch;
+
+      render(<App />);
+
+      fireEvent.click(await screen.findByRole("button", { name: /Field Notes 1 files/i }));
+      expect(await screen.findByText("Queued")).toBeInTheDocument();
+      expect(await screen.findByText("Indexing 42%", {}, { timeout: 3000 })).toBeInTheDocument();
+      expect(await screen.findByText("Ready", {}, { timeout: 3000 })).toBeInTheDocument();
+    },
+    10000
+  );
+
+  it("reindexes a document through the backend", async () => {
+    const seedProject: MockProject = {
+      id: "project-1",
+      name: "Field Notes",
+      accent: "#c2410c",
+      createdAt: "2026-04-03T12:00:00.000Z",
+      updatedAt: "2026-04-03T12:00:00.000Z"
+    };
+    const seedDocument: MockDocument = {
+      id: "document-1",
+      projectId: "project-1",
+      name: "launch-overview.pdf",
+      filePath: "/tmp/launch-overview.pdf",
+      md5: "md5-1",
+      status: "file_changed",
+      progress: 0,
+      createdAt: "2026-04-03T12:00:00.000Z",
+      updatedAt: "2026-04-03T12:00:00.000Z"
+    };
+    const fetchMock = createFetchMock({
+      projects: [seedProject],
+      documentsByProject: { "project-1": [seedDocument] }
+    });
+    globalThis.fetch = fetchMock as typeof fetch;
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /Field Notes 1 files/i }));
+    expect(await screen.findByText("File changed")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Reindex launch-overview.pdf" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Queued")).toBeInTheDocument();
+    });
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        "http://127.0.0.1:8000/projects/project-1/documents/document-1/reindex",
+        expect.objectContaining({ method: "POST" })
+      );
+    });
   });
 });

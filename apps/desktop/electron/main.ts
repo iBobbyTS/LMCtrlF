@@ -2,17 +2,20 @@ import { spawn, type ChildProcess } from "node:child_process";
 
 import { app, BrowserWindow } from "electron";
 
+import { findAvailablePort, waitForBackendHealth, waitForManagedBackendHealth } from "./backend";
 import {
+  buildBackendBaseUrl,
   getBackendLaunchCommand,
   resolveBackendBaseUrl,
+  resolveBackendHost,
+  resolveBackendPort,
   resolvePreloadEntry,
   resolveRendererEntry
 } from "./config";
 
 let backendProcess: ChildProcess | null = null;
 
-const createWindow = async (): Promise<void> => {
-  const backendBaseUrl = resolveBackendBaseUrl(process.env.LMCTRLF_BACKEND_URL);
+const createWindow = async (backendBaseUrl: string): Promise<void> => {
   const preloadEntry = resolvePreloadEntry();
   const rendererEntry = resolveRendererEntry(process.env.LMCTRLF_RENDERER_URL);
 
@@ -35,17 +38,34 @@ const createWindow = async (): Promise<void> => {
   await window.loadFile(rendererEntry);
 };
 
-const startBackendSidecar = (): void => {
-  if (app.isPackaged || process.env.LMCTRLF_BACKEND_URL) {
-    return;
+const startBackendSidecar = async (): Promise<string> => {
+  if (app.isPackaged) {
+    return resolveBackendBaseUrl(process.env.LMCTRLF_BACKEND_URL);
   }
 
-  const launch = getBackendLaunchCommand();
+  if (process.env.LMCTRLF_BACKEND_URL) {
+    const backendBaseUrl = resolveBackendBaseUrl(process.env.LMCTRLF_BACKEND_URL);
+    await waitForBackendHealth(backendBaseUrl);
+    return backendBaseUrl;
+  }
+
+  const backendHost = resolveBackendHost();
+  const preferredPort = resolveBackendPort();
+  const backendPort = await findAvailablePort(backendHost, preferredPort);
+  const backendBaseUrl = buildBackendBaseUrl(backendHost, backendPort);
+  const launch = getBackendLaunchCommand(backendPort);
+
   backendProcess = spawn(launch.command, launch.args, {
     cwd: launch.cwd,
-    env: process.env,
+    env: {
+      ...process.env,
+      ...launch.env
+    },
     stdio: "ignore"
   });
+
+  await waitForManagedBackendHealth(backendProcess, backendBaseUrl);
+  return backendBaseUrl;
 };
 
 const stopBackendSidecar = (): void => {
@@ -58,8 +78,14 @@ const stopBackendSidecar = (): void => {
 };
 
 app.whenReady().then(async () => {
-  startBackendSidecar();
-  await createWindow();
+  try {
+    const backendBaseUrl = await startBackendSidecar();
+    await createWindow(backendBaseUrl);
+  } catch (error) {
+    console.error("Failed to start the backend sidecar.", error);
+    stopBackendSidecar();
+    app.quit();
+  }
 });
 
 app.on("window-all-closed", () => {
