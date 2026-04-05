@@ -5,6 +5,7 @@ import json
 from fastapi.testclient import TestClient
 
 from app.lmstudio_chat import LMStudioChatRequestError
+from app.models import Document
 
 
 def create_project(client: TestClient, name: str = "Field Notes", accent: str = "#c2410c") -> dict[str, str]:
@@ -199,6 +200,7 @@ def test_threads_and_messages_are_persisted_with_generated_title(client: TestCli
     assert messages[0]["role"] == "User"
     assert messages[1]["role"] == "google/gemma-4-26b-a4b"
     assert messages[1]["reasoningContent"] == "Planning the answer."
+    assert messages[1]["citations"] == []
 
     threads_response = client.get(f"/projects/{project['id']}/threads")
     assert threads_response.status_code == 200
@@ -315,6 +317,80 @@ def test_invalid_previous_response_id_falls_back_to_transcript(client: TestClien
     assert "Latest user message:\nWhat did I ask before?" in str(
         fake_chat_client.stream_calls[2]["input_text"]
     )
+
+
+def test_chat_uses_retrieved_chunks_and_persists_citations(client: TestClient) -> None:
+    project = create_project(client)
+    update_lmstudio_chat_model(client, "google/gemma-4-26b-a4b")
+    document = Document.create(
+        id="document-1",
+        project_id=project["id"],
+        name="launch-overview.pdf",
+        file_path="/tmp/launch-overview.pdf",
+        md5="md5-1",
+        status="ready",
+        progress=100,
+    )
+    client.app.state.lancedb_store.replace_document_chunks(
+        [
+            {
+                "id": "chunk-1",
+                "project_id": project["id"],
+                "document_id": document.id,
+                "document_md5": "md5-1",
+                "page_number": 2,
+                "chunk_index": 1,
+                "text": "Budget approval is still pending before launch.",
+                "vector": [1.0] * 768,
+                "char_count": 47,
+                "created_at": "2026-04-03T12:00:00Z",
+            }
+        ]
+    )
+
+    fake_chat_client = FakeChatClient()
+    fake_chat_client.stream_sequences = [
+        [
+            (
+                "chat.end",
+                {
+                    "type": "chat.end",
+                    "result": {
+                        "output": [{"type": "message", "content": "The blocker is still budget approval."}],
+                        "response_id": "resp-first",
+                    },
+                },
+            )
+        ]
+    ]
+    fake_chat_client.complete_responses = [{"output": [{"type": "message", "content": "Budget status"}]}]
+    client.app.state.chat_client = fake_chat_client
+
+    thread = client.post(f"/projects/{project['id']}/threads", json={}).json()
+    stream_response = client.post(
+        f"/projects/{project['id']}/threads/{thread['id']}/messages/stream",
+        json={"content": "What is blocked right now?"},
+    )
+
+    assert stream_response.status_code == 200
+    assert "Retrieved context:" in str(fake_chat_client.stream_calls[0]["input_text"])
+    assert "launch-overview.pdf (page 2, chunk 1)" in str(fake_chat_client.stream_calls[0]["input_text"])
+    assert "Budget approval is still pending before launch." in str(
+        fake_chat_client.stream_calls[0]["input_text"]
+    )
+
+    messages_response = client.get(f"/projects/{project['id']}/threads/{thread['id']}/messages")
+    messages = messages_response.json()
+    assert messages[1]["citations"] == [
+        {
+            "documentId": "document-1",
+            "documentName": "launch-overview.pdf",
+            "pageNumber": 2,
+            "chunkIndex": 1,
+            "snippet": "Budget approval is still pending before launch.",
+            "score": 0.0,
+        }
+    ]
 
 
 def test_non_lm_studio_provider_returns_not_implemented(client: TestClient) -> None:

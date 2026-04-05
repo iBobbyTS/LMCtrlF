@@ -11,8 +11,8 @@ from fastapi import APIRouter, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, field_validator
 
+from app.indexing import EmbeddingClient
 from app.lmstudio_chat import (
-    CHAT_SYSTEM_PROMPT,
     TITLE_SYSTEM_PROMPT,
     LMStudioChatClient,
     LMStudioChatRequestError,
@@ -22,12 +22,20 @@ from app.lmstudio_chat import (
     sanitize_title,
 )
 from app.model_settings import load_model_settings_payload
-from app.models import ChatMessage, ChatThread, Project
+from app.models import ChatMessage, ChatThread, Document, Project
 
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["chat"])
 SENDER_TYPES = {"user", "assistant"}
+MAX_CITATIONS = 4
+MAX_SNIPPET_LENGTH = 280
+RAG_CHAT_SYSTEM_PROMPT = (
+    "You are the assistant inside LMCtrlF. Use the retrieved project context when it is relevant. "
+    "Do not claim to have read or searched project files beyond the provided retrieved passages. "
+    "If the available context is insufficient, say so clearly. Give targeted answers and rely on the "
+    "retrieved passages for document-specific claims."
+)
 
 
 def utc_now() -> datetime:
@@ -49,7 +57,7 @@ def serialize_thread(thread: ChatThread) -> dict[str, str]:
     }
 
 
-def serialize_message(message: ChatMessage) -> dict[str, str]:
+def serialize_message(message: ChatMessage) -> dict[str, Any]:
     return {
         "id": message.id,
         "threadId": message.thread_id,
@@ -57,6 +65,7 @@ def serialize_message(message: ChatMessage) -> dict[str, str]:
         "role": message.role,
         "content": message.content,
         "reasoningContent": message.reasoning_content,
+        "citations": json.loads(message.citations_json or "[]"),
         "createdAt": serialize_timestamp(message.created_at),
     }
 
@@ -89,6 +98,11 @@ def build_summary(content: str) -> str:
     return normalized[:100]
 
 
+def normalize_snippet(text: str) -> str:
+    normalized = re.sub(r"\s+", " ", text).strip()
+    return normalized[:MAX_SNIPPET_LENGTH]
+
+
 def build_transcript(thread: ChatThread, latest_user_message: ChatMessage) -> str:
     messages = list_thread_messages(thread.id)
     history_lines = [
@@ -100,6 +114,88 @@ def build_transcript(thread: ChatThread, latest_user_message: ChatMessage) -> st
     if not history_text:
         history_text = "(empty)"
     return f"Conversation so far:\n{history_text}\n\nLatest user message:\n{latest_user_message.content}"
+
+
+def get_document_map(project_id: str) -> dict[str, Document]:
+    query = Document.select().where(Document.project_id == project_id)
+    return {document.id: document for document in query}
+
+
+def retrieve_project_citations(
+    *,
+    project_id: str,
+    query_text: str,
+    provider: dict[str, str],
+    lancedb_store,
+    embedding_client: EmbeddingClient,
+) -> list[dict[str, Any]]:
+    try:
+        vectors = embedding_client.embed_texts(
+            provider["baseUrl"],
+            provider["embeddingModel"],
+            provider["apiKey"],
+            [query_text],
+        )
+    except Exception:
+        logger.warning("Failed to embed a chat query for project %s.", project_id, exc_info=True)
+        return []
+
+    if not vectors:
+        return []
+
+    rows = lancedb_store.search_project_chunks(project_id, vectors[0], limit=MAX_CITATIONS * 2)
+    if not rows:
+        return []
+
+    document_map = get_document_map(project_id)
+    citations: list[dict[str, Any]] = []
+    seen_keys: set[tuple[str, int, int]] = set()
+
+    for row in rows:
+        document_id = str(row.get("document_id", ""))
+        document = document_map.get(document_id)
+        if document is None:
+            continue
+
+        page_number = int(row.get("page_number", 0) or 0)
+        chunk_index = int(row.get("chunk_index", 0) or 0)
+        dedupe_key = (document_id, page_number, chunk_index)
+        if dedupe_key in seen_keys:
+            continue
+        seen_keys.add(dedupe_key)
+
+        score_value = row.get("_distance")
+        score = float(score_value) if isinstance(score_value, (int, float)) else None
+        citations.append(
+            {
+                "documentId": document.id,
+                "documentName": document.name,
+                "pageNumber": page_number,
+                "chunkIndex": chunk_index,
+                "snippet": normalize_snippet(str(row.get("text", ""))),
+                "score": score,
+            }
+        )
+        if len(citations) >= MAX_CITATIONS:
+            break
+
+    return citations
+
+
+def build_contextual_chat_input(base_text: str, citations: list[dict[str, Any]]) -> str:
+    if not citations:
+        return base_text
+
+    context_lines = [
+        f"[{index}] {citation['documentName']} (page {citation['pageNumber']}, chunk {citation['chunkIndex']})\n"
+        f"{citation['snippet']}"
+        for index, citation in enumerate(citations, start=1)
+    ]
+    return (
+        "Use the retrieved project context below when it is relevant to the user's question.\n\n"
+        f"Retrieved context:\n{'\n\n'.join(context_lines)}\n\n"
+        f"User question:\n{base_text}"
+    )
 
 
 def get_selected_provider() -> dict[str, str]:
@@ -202,6 +298,8 @@ def iter_chat_events(
     provider: dict[str, str],
     thread: ChatThread,
     latest_user_message: ChatMessage,
+    contextual_input: str,
+    fallback_input: str,
 ) -> Iterable[tuple[str, dict[str, Any]]]:
     previous_response_id = thread.lmstudio_last_response_id
     if previous_response_id:
@@ -210,8 +308,8 @@ def iter_chat_events(
                 base_url=provider["baseUrl"],
                 model=provider["chattingModel"],
                 api_key=provider["apiKey"],
-                input_text=latest_user_message.content,
-                system_prompt=CHAT_SYSTEM_PROMPT,
+                input_text=contextual_input,
+                system_prompt=RAG_CHAT_SYSTEM_PROMPT,
                 reasoning="on",
                 store=True,
                 previous_response_id=previous_response_id,
@@ -221,21 +319,12 @@ def iter_chat_events(
             if not is_invalid_previous_response_error(error):
                 raise
 
-    history_before_current_turn = (
-        ChatMessage.select()
-        .where((ChatMessage.thread_id == thread.id) & (ChatMessage.id != latest_user_message.id))
-        .exists()
-    )
-    input_text = latest_user_message.content
-    if history_before_current_turn:
-        input_text = build_transcript(thread, latest_user_message)
-
     yield from chat_client.stream_chat(
         base_url=provider["baseUrl"],
         model=provider["chattingModel"],
         api_key=provider["apiKey"],
-        input_text=input_text,
-        system_prompt=CHAT_SYSTEM_PROMPT,
+        input_text=fallback_input,
+        system_prompt=RAG_CHAT_SYSTEM_PROMPT,
         reasoning="on",
         store=True,
         previous_response_id=None,
@@ -285,7 +374,7 @@ def create_thread(project_id: str) -> dict[str, str]:
 
 
 @router.get("/projects/{project_id}/threads/{thread_id}/messages")
-def get_thread_messages(project_id: str, thread_id: str) -> list[dict[str, str]]:
+def get_thread_messages(project_id: str, thread_id: str) -> list[dict[str, Any]]:
     get_thread_or_404(project_id, thread_id)
     return [serialize_message(message) for message in list_thread_messages(thread_id)]
 
@@ -320,6 +409,16 @@ def stream_thread_message(
     project.updated_at = timestamp
     project.save()
     chat_client: LMStudioChatClient = request.app.state.chat_client
+    embedding_client: EmbeddingClient = request.app.state.indexing_worker.embedding_client
+    citations = retrieve_project_citations(
+        project_id=project.id,
+        query_text=payload.content,
+        provider=provider,
+        lancedb_store=request.app.state.lancedb_store,
+        embedding_client=embedding_client,
+    )
+    contextual_input = build_contextual_chat_input(payload.content, citations)
+    fallback_input = build_contextual_chat_input(build_transcript(thread, user_message), citations)
 
     def event_stream() -> Iterable[bytes]:
         reasoning_parts: list[str] = []
@@ -331,6 +430,8 @@ def stream_thread_message(
                 provider=provider,
                 thread=thread,
                 latest_user_message=user_message,
+                contextual_input=contextual_input,
+                fallback_input=fallback_input,
             ):
                 if event_name == "reasoning.delta":
                     content = str(event_payload.get("content", ""))
@@ -375,6 +476,7 @@ def stream_thread_message(
                     role=provider["chattingModel"],
                     content=assistant_content,
                     reasoning_content=assistant_reasoning,
+                    citations_json=json.dumps(citations),
                     created_at=assistant_timestamp,
                 )
                 thread.summary = build_summary(assistant_content)

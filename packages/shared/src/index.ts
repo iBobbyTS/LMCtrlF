@@ -61,6 +61,15 @@ export interface ChatThreadRecord {
   updatedAt: string;
 }
 
+export interface CitationRecord {
+  documentId: string;
+  documentName: string;
+  pageNumber: number;
+  chunkIndex: number;
+  snippet: string;
+  score: number | null;
+}
+
 export interface ChatMessageRecord {
   id: string;
   threadId: string;
@@ -68,6 +77,7 @@ export interface ChatMessageRecord {
   role: string;
   content: string;
   reasoningContent: string;
+  citations: CitationRecord[];
   createdAt: string;
 }
 

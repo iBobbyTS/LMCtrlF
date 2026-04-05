@@ -1,6 +1,7 @@
 import type {
   ChatMessageRecord,
   ChatThreadRecord,
+  CitationRecord,
   CreateProjectRequest,
   DocumentRecord,
   DocumentStatus,
@@ -103,6 +104,123 @@ const buildTemporaryId = (prefix: string): string => {
   return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 };
 
+const renderInlineMarkdown = (text: string) => {
+  const pattern = /(\[([^\]]+)\]\((https?:\/\/[^\s)]+)\))|(`([^`]+)`)|(\*\*([^*]+)\*\*)|(\*([^*]+)\*)/g;
+  const nodes: Array<string | JSX.Element> = [];
+  let lastIndex = 0;
+  let match: RegExpExecArray | null = pattern.exec(text);
+  let key = 0;
+
+  while (match) {
+    if (match.index > lastIndex) {
+      nodes.push(text.slice(lastIndex, match.index));
+    }
+
+    if (match[2] && match[3]) {
+      nodes.push(
+        <a href={match[3]} key={`inline-${key}`} rel="noreferrer" target="_blank">
+          {match[2]}
+        </a>
+      );
+    } else if (match[5]) {
+      nodes.push(<code key={`inline-${key}`}>{match[5]}</code>);
+    } else if (match[7]) {
+      nodes.push(<strong key={`inline-${key}`}>{match[7]}</strong>);
+    } else if (match[9]) {
+      nodes.push(<em key={`inline-${key}`}>{match[9]}</em>);
+    }
+
+    lastIndex = pattern.lastIndex;
+    key += 1;
+    match = pattern.exec(text);
+  }
+
+  if (lastIndex < text.length) {
+    nodes.push(text.slice(lastIndex));
+  }
+
+  return nodes;
+};
+
+const renderMarkdownBlocks = (markdown: string) => {
+  const normalized = markdown.replace(/\r\n/g, "\n").trim();
+  if (!normalized) {
+    return null;
+  }
+
+  const blocks = normalized.split(/\n{2,}/);
+
+  return blocks.map((block, blockIndex) => {
+    const lines = block.split("\n").map((line) => line.trimEnd());
+    const firstLine = lines[0]?.trim() ?? "";
+
+    if (lines.every((line) => /^[-*]\s+/.test(line.trim()))) {
+      return (
+        <ul key={`block-${blockIndex}`}>
+          {lines.map((line, itemIndex) => (
+            <li key={`item-${blockIndex}-${itemIndex}`}>
+              {renderInlineMarkdown(line.trim().replace(/^[-*]\s+/, ""))}
+            </li>
+          ))}
+        </ul>
+      );
+    }
+
+    const orderedListMatches = lines.map((line) => line.trim().match(/^\d+\.\s+(.*)$/));
+    if (orderedListMatches.every((item) => item)) {
+      return (
+        <ol key={`block-${blockIndex}`}>
+          {orderedListMatches.map((item, itemIndex) => (
+            <li key={`item-${blockIndex}-${itemIndex}`}>{renderInlineMarkdown(item?.[1] ?? "")}</li>
+          ))}
+        </ol>
+      );
+    }
+
+    const headingMatch = firstLine.match(/^(#{1,6})\s+(.*)$/);
+    if (headingMatch) {
+      const level = headingMatch[1].length;
+      const content = headingMatch[2];
+
+      if (level === 1) {
+        return <h1 key={`block-${blockIndex}`}>{renderInlineMarkdown(content)}</h1>;
+      }
+      if (level === 2) {
+        return <h2 key={`block-${blockIndex}`}>{renderInlineMarkdown(content)}</h2>;
+      }
+      if (level === 3) {
+        return <h3 key={`block-${blockIndex}`}>{renderInlineMarkdown(content)}</h3>;
+      }
+      if (level === 4) {
+        return <h4 key={`block-${blockIndex}`}>{renderInlineMarkdown(content)}</h4>;
+      }
+      if (level === 5) {
+        return <h5 key={`block-${blockIndex}`}>{renderInlineMarkdown(content)}</h5>;
+      }
+      return <h6 key={`block-${blockIndex}`}>{renderInlineMarkdown(content)}</h6>;
+    }
+
+    if (lines.length >= 2 && lines[0]?.startsWith("```") && lines.at(-1)?.trim() === "```") {
+      const code = lines.slice(1, -1).join("\n");
+      return (
+        <pre key={`block-${blockIndex}`}>
+          <code>{code}</code>
+        </pre>
+      );
+    }
+
+    if (lines.every((line) => line.trim().startsWith(">"))) {
+      return (
+        <blockquote key={`block-${blockIndex}`}>
+          <p>{renderInlineMarkdown(lines.map((line) => line.trim().replace(/^>\s?/, "")).join(" "))}</p>
+        </blockquote>
+      );
+    }
+
+    return <p key={`block-${blockIndex}`}>{renderInlineMarkdown(lines.join(" "))}</p>;
+  });
+};
+
 const buildPendingUserMessage = (threadId: string, content: string): ChatMessageRecord => {
   return {
     id: buildTemporaryId("pending-user"),
@@ -111,6 +229,7 @@ const buildPendingUserMessage = (threadId: string, content: string): ChatMessage
     role: "User",
     content,
     reasoningContent: "",
+    citations: [],
     createdAt: new Date().toISOString()
   };
 };
@@ -431,6 +550,7 @@ const App = () => {
                 role: streamingAssistant.role,
                 content: streamingAssistant.content,
                 reasoningContent: streamingAssistant.reasoningContent,
+                citations: [],
                 createdAt: streamingAssistant.createdAt
               }
             ]
@@ -1071,6 +1191,36 @@ const App = () => {
     );
   };
 
+  const renderCitations = (citations: CitationRecord[]) => {
+    if (citations.length === 0) {
+      return null;
+    }
+
+    return (
+      <div className="message-citations">
+        <span className="message-citations__label">Sources</span>
+        <ul className="message-citations__list">
+          {citations.map((citation, index) => (
+            <li className="message-citations__item" key={`${citation.documentId}-${citation.pageNumber}-${citation.chunkIndex}-${index}`}>
+              <span className="message-citations__title">
+                [{index + 1}] {citation.documentName} · page {citation.pageNumber}
+              </span>
+              <p>{citation.snippet}</p>
+            </li>
+          ))}
+        </ul>
+      </div>
+    );
+  };
+
+  const renderMessageContent = (message: ChatMessageRecord) => {
+    if (message.senderType === "assistant") {
+      return <div className="message-bubble__markdown">{renderMarkdownBlocks(message.content)}</div>;
+    }
+
+    return <p>{message.content}</p>;
+  };
+
   const renderChatView = () => {
     if (!selectedProject) {
       return null;
@@ -1177,7 +1327,8 @@ const App = () => {
                             message.reasoningContent,
                             reasoningCollapsed
                           )}
-                          <p>{message.content}</p>
+                          {renderMessageContent(message)}
+                          {message.senderType === "assistant" ? renderCitations(message.citations) : null}
                         </article>
                       );
                     })

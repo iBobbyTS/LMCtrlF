@@ -27,6 +27,8 @@
 - thread summaries update from the latest assistant message
 - follow-up turns reuse LM Studio `previous_response_id`
 - invalid LM Studio `previous_response_id` values fall back to a transcript retry
+- chat retrieval injects the top LanceDB passages into the LM Studio request
+- assistant messages persist retrieved citations for later source display
 - title-generation failures keep the provisional thread title
 - non-LM Studio providers return `501` for chat
 
@@ -57,6 +59,8 @@
 - chat shows an empty state for projects without persisted threads and allows backend-backed thread creation
 - chat streams saved user and assistant turns from the backend
 - assistant messages show the exact chatting-model label
+- assistant message bodies render Markdown formatting for the final visible reply
+- assistant messages render retrieved source citations beneath the answer
 - thread hover tooltips expose saved summaries
 - saved reasoning defaults to collapsed whenever a thread is reopened
 - non-LM Studio providers disable chat sending in the renderer

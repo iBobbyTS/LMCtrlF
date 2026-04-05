@@ -46,6 +46,14 @@ type MockMessage = {
   role: string;
   content: string;
   reasoningContent: string;
+  citations: Array<{
+    documentId: string;
+    documentName: string;
+    pageNumber: number;
+    chunkIndex: number;
+    snippet: string;
+    score: number | null;
+  }>;
   createdAt: string;
 };
 
@@ -386,6 +394,7 @@ const createFetchMock = (seed?: {
         role: "User",
         content: body.content,
         reasoningContent: "",
+        citations: [],
         createdAt: timestamp
       };
       messageCounter += 1;
@@ -396,6 +405,7 @@ const createFetchMock = (seed?: {
         role: selectedProvider.chattingModel,
         content: "Thanks for the question.",
         reasoningContent: "Thinking through the answer.",
+        citations: [],
         createdAt: new Date(Date.UTC(2026, 3, 3, 12, 0, messageCounter)).toISOString()
       };
       messageCounter += 1;
@@ -704,6 +714,7 @@ describe("App", () => {
       role: "User",
       content: "What are the blockers?",
       reasoningContent: "",
+      citations: [],
       createdAt: "2026-04-03T12:04:00.000Z"
     };
     const assistantMessage: MockMessage = {
@@ -713,6 +724,16 @@ describe("App", () => {
       role: "google/gemma-4-26b-a4b",
       content: "Launch blockers are the pending review and the missing budget sign-off.",
       reasoningContent: "I should summarize the blockers clearly.",
+      citations: [
+        {
+          documentId: "document-1",
+          documentName: "launch-overview.pdf",
+          pageNumber: 2,
+          chunkIndex: 1,
+          snippet: "Budget approval is still pending before launch.",
+          score: 0.12
+        }
+      ],
       createdAt: "2026-04-03T12:05:00.000Z"
     };
     const fetchMock = createFetchMock({
@@ -767,11 +788,73 @@ describe("App", () => {
     expect(
       await screen.findByText("Launch blockers are the pending review and the missing budget sign-off.")
     ).toBeInTheDocument();
+    expect(await screen.findByText("Sources")).toBeInTheDocument();
+    expect(await screen.findByText("[1] launch-overview.pdf · page 2")).toBeInTheDocument();
+    expect(await screen.findByText("Budget approval is still pending before launch.")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Show thinking process" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Launch Notes" })).toHaveAttribute(
       "title",
       completedThread.summary
     );
+  });
+
+  it("renders assistant responses as markdown without affecting user text", async () => {
+    const seedProject: MockProject = {
+      id: "project-1",
+      name: "Field Notes",
+      accent: "#c2410c",
+      createdAt: "2026-04-03T12:00:00.000Z",
+      updatedAt: "2026-04-03T12:00:00.000Z"
+    };
+    const seedThread: MockThread = {
+      id: "thread-1",
+      projectId: "project-1",
+      title: "Launch Notes",
+      summary: "Summary",
+      createdAt: "2026-04-03T12:00:00.000Z",
+      updatedAt: "2026-04-03T12:05:00.000Z"
+    };
+    const userMessage: MockMessage = {
+      id: "message-user-1",
+      threadId: "thread-1",
+      senderType: "user",
+      role: "User",
+      content: "Keep this plain text",
+      reasoningContent: "",
+      citations: [],
+      createdAt: "2026-04-03T12:04:00.000Z"
+    };
+    const assistantMessage: MockMessage = {
+      id: "message-assistant-1",
+      threadId: "thread-1",
+      senderType: "assistant",
+      role: "google/gemma-4-26b-a4b",
+      content: "# Blockers\n\n**Budget approval** is pending.\n\n- Review\n- Budget",
+      reasoningContent: "",
+      citations: [],
+      createdAt: "2026-04-03T12:05:00.000Z"
+    };
+    const fetchMock = createFetchMock({
+      projects: [seedProject],
+      documentsByProject: { "project-1": [] },
+      threadsByProject: { "project-1": [seedThread] },
+      messagesByThread: { "thread-1": [userMessage, assistantMessage] }
+    });
+    globalThis.fetch = fetchMock as typeof fetch;
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /Field Notes 0 files/i }));
+    fireEvent.click(screen.getByRole("button", { name: "Chat" }));
+
+    const assistantBubble = await screen.findByText("google/gemma-4-26b-a4b");
+
+    expect(await screen.findByText("Keep this plain text")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Blockers" })).toBeInTheDocument();
+    expect(screen.getByText("Budget approval")).toBeInTheDocument();
+    expect(within(assistantBubble.closest("article") as HTMLElement).getByRole("list")).toBeInTheDocument();
+    expect(screen.getByText("Review")).toBeInTheDocument();
+    expect(screen.getByText("Budget")).toBeInTheDocument();
   });
 
   it("defaults saved reasoning to collapsed when reopening a thread", async () => {
@@ -797,6 +880,7 @@ describe("App", () => {
       role: "google/gemma-4-26b-a4b",
       content: "The blockers are budget and review.",
       reasoningContent: "I should mention budget first.",
+      citations: [],
       createdAt: "2026-04-03T12:05:00.000Z"
     };
     const fetchMock = createFetchMock({

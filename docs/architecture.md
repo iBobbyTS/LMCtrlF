@@ -47,9 +47,11 @@ The renderer now loads projects, documents, model settings, chat threads, and ch
 
 The backend persists document metadata in SQLite and vectorized chunks in LanceDB. A single in-process background worker consumes queued documents, extracts PDF text page-by-page, requests embeddings from the selected LM Studio-compatible provider, and writes chunk vectors to the shared LanceDB table.
 
-The chat flow is independent from indexing. Thread and message history live in SQLite. The backend proxies streamed responses from LM Studio's native `POST /api/v1/chat` endpoint, stores the user/assistant turns after each successful exchange, and tracks the latest LM Studio `response_id` per thread so follow-up turns can use `previous_response_id` instead of rebuilding structured history on every request.
+The chat flow builds on the indexed LanceDB chunks. Thread and message history live in SQLite. For each user turn, the backend embeds the query with the selected embedding model, searches the current project's LanceDB chunks, injects the top passages into LM Studio's native `POST /api/v1/chat` request, and stores the final user/assistant turns plus the cited passages after each successful exchange. The backend also tracks the latest LM Studio `response_id` per thread so follow-up turns can use `previous_response_id` instead of rebuilding structured history on every request.
 
 The renderer keeps reasoning expansion local to the current session. Persisted reasoning text is available for every assistant message, but reopening a thread always starts with reasoning collapsed.
+
+Assistant message bodies render Markdown formatting for the final visible reply. Reasoning text stays plain text so the temporary thought stream remains visually separate from the final answer.
 
 The top-level UI exposes two primary tabs:
 
@@ -66,7 +68,5 @@ The repository does not yet include:
 
 - OCR or image extraction for PDFs
 - multi-worker or distributed indexing
-- live retrieval or answer synthesis against the stored vectors
-- document search or retrieval augmentation inside chat
 - non-LM Studio chat provider implementations
 - persisted accessibility settings

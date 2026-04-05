@@ -9,6 +9,7 @@ The shared contract package currently exposes:
 - `ConnectionStatus`
 - `DocumentStatus`
 - `ChatSenderType`
+- `CitationRecord`
 - `ProjectRecord`
 - `DocumentRecord`
 - `ChatThreadRecord`
@@ -188,6 +189,7 @@ Example response:
     "role": "User",
     "content": "What is still blocked?",
     "reasoningContent": "",
+    "citations": [],
     "createdAt": "2026-04-03T12:04:00Z"
   },
   {
@@ -197,12 +199,24 @@ Example response:
     "role": "google/gemma-4-26b-a4b",
     "content": "Budget approval is still blocked.",
     "reasoningContent": "I should answer directly and mention the blocker first.",
+    "citations": [
+      {
+        "documentId": "document-1",
+        "documentName": "launch-overview.pdf",
+        "pageNumber": 2,
+        "chunkIndex": 1,
+        "snippet": "Budget approval is still pending before launch.",
+        "score": 0.12
+      }
+    ],
     "createdAt": "2026-04-03T12:05:00Z"
   }
 ]
 ```
 
 The `role` field is an arbitrary text label. User messages store `User`. Assistant messages store the exact `chattingModel` value used for that response.
+
+Each assistant message may also include `citations`, a list of retrieved document passages that were attached to that answer. The renderer shows these as numbered sources beneath the assistant bubble.
 
 ### `POST /projects/{projectId}/threads/{threadId}/messages/stream`
 
@@ -211,10 +225,12 @@ Starts a streamed LM Studio native chat request for the selected thread.
 The backend:
 
 - persists the user message in SQLite before contacting LM Studio
+- embeds the user query with the selected embedding model and searches the current project's LanceDB chunks
+- injects the top retrieved passages into the LM Studio request as grounded context
 - uses `POST /api/v1/chat` against the selected LM Studio base URL
 - keeps LM Studio continuation state in `lmstudio_last_response_id`
 - falls back to a transcript-based retry when the stored `previous_response_id` is no longer valid
-- stores the final assistant message, reasoning text, updated thread summary, and refreshed thread title after the stream completes
+- stores the final assistant message, reasoning text, retrieved citations, updated thread summary, and refreshed thread title after the stream completes
 
 The request body is:
 

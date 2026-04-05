@@ -19,10 +19,21 @@ from app.model_settings import ensure_model_settings_record
 from app.models import ChatMessage, ChatThread, Document, ModelSettings, Project
 
 
+def ensure_chat_schema(database) -> None:
+    table_names = set(database.get_tables())
+    if "chat_messages" not in table_names:
+        return
+
+    existing_columns = {column.name for column in database.get_columns("chat_messages")}
+    if "citations_json" not in existing_columns:
+        database.execute_sql("ALTER TABLE chat_messages ADD COLUMN citations_json TEXT NOT NULL DEFAULT '[]'")
+
+
 def create_app(settings: Settings | None = None) -> FastAPI:
     app_settings = settings or get_settings()
     database = initialize_database(app_settings.database_path)
     database.create_tables([Project, Document, ModelSettings, ChatThread, ChatMessage], safe=True)
+    ensure_chat_schema(database)
     ensure_model_settings_record()
     lancedb_store = LanceDBStore(app_settings.lancedb_path)
     indexing_worker = IndexingWorker(lancedb_store)

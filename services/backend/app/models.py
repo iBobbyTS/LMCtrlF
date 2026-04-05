@@ -74,6 +74,7 @@ class ChatMessage(BaseModel):
     role = TextField()
     content = TextField()
     reasoning_content = TextField(default="")
+    citations_json = TextField(default="[]")
     created_at = DateTimeField(default=utc_now)
 
     class Meta:
