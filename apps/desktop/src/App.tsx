@@ -1440,7 +1440,7 @@ const App = () => {
             <label className="form-field">
               <span>Base URL (required)</span>
               <input
-                
+                required
                 onChange={(event) => handleUpdateProviderField("baseUrl", event.target.value)}
                 type="text"
                 value={selectedProvider.baseUrl}
@@ -1450,7 +1450,7 @@ const App = () => {
             <label className="form-field">
               <span>Embedding model (required)</span>
               <input
-                
+                required
                 onChange={(event) => handleUpdateProviderField("embeddingModel", event.target.value)}
                 type="text"
                 value={selectedProvider.embeddingModel}
@@ -1460,7 +1460,7 @@ const App = () => {
             <label className="form-field">
               <span>Chatting model (required)</span>
               <input
-                
+                required
                 onChange={(event) => handleUpdateProviderField("chattingModel", event.target.value)}
                 type="text"
                 value={selectedProvider.chattingModel}
