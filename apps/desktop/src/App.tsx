@@ -1597,7 +1597,7 @@ const App = () => {
   };
 
   return (
-    <main className={`workspace-shell ${showTabs ? "" : "workspace-shell--immersive"}`}>
+    <main className={`workspace-shell ${showTabs ? "" : "workspace-shell--immersive"} ${accessibilityList.find(o => o.id === 'reduce-motion')?.enabled ? 'reduce-motion' : ''} ${accessibilityList.find(o => o.id === 'high-contrast')?.enabled ? 'high-contrast' : ''} ${accessibilityList.find(o => o.id === 'larger-text')?.enabled ? 'larger-text' : ''}`}>
       {showTabs ? (
         <>
           <header className="top-tabs" aria-label="Primary navigation">
