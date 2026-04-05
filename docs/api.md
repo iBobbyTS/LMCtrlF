@@ -8,14 +8,20 @@ The shared contract package currently exposes:
 - `ApiError`
 - `ConnectionStatus`
 - `DocumentStatus`
+- `ChatSenderType`
 - `ProjectRecord`
 - `DocumentRecord`
+- `ChatThreadRecord`
+- `ChatMessageRecord`
 - `ProviderSettingsRecord`
 - `ModelSettingsResponse`
 - `UpdateModelSettingsRequest`
 - `CreateProjectRequest`
 - `ImportDocumentItem`
 - `ImportDocumentsRequest`
+- `CreateChatThreadRequest`
+- `SendChatMessageRequest`
+- `ChatStreamEvent`
 
 ## Backend HTTP API
 
@@ -137,6 +143,97 @@ Example response:
 Replaces the persisted provider settings payload.
 
 The indexing worker reads the selected provider's `baseUrl`, `embeddingModel`, and `apiKey` at runtime before requesting embeddings.
+
+The chat runtime also reads the selected provider's `baseUrl`, `chattingModel`, and `apiKey`. Chat requests are only implemented for the `lm-studio` provider. Other providers return `501 Not Implemented` from the chat endpoint.
+
+### `GET /projects/{projectId}/threads`
+
+Returns every persisted chat thread for a project, ordered by the most recent thread update.
+
+Example response:
+
+```json
+[
+  {
+    "id": "thread-123",
+    "projectId": "project-123",
+    "title": "Launch Notes",
+    "summary": "Budget approval is still missing.",
+    "createdAt": "2026-04-03T12:00:00Z",
+    "updatedAt": "2026-04-03T12:05:00Z"
+  }
+]
+```
+
+`summary` is the latest assistant message content truncated to 100 characters. The renderer currently exposes it as a native tooltip on the thread item.
+
+### `POST /projects/{projectId}/threads`
+
+Creates a persisted thread record for the selected project.
+
+New threads start with the provisional title `New thread N`, where `N` is the next project-local thread count.
+
+### `GET /projects/{projectId}/threads/{threadId}/messages`
+
+Returns the saved message history for a thread ordered by `createdAt`.
+
+Example response:
+
+```json
+[
+  {
+    "id": "message-123",
+    "threadId": "thread-123",
+    "senderType": "user",
+    "role": "User",
+    "content": "What is still blocked?",
+    "reasoningContent": "",
+    "createdAt": "2026-04-03T12:04:00Z"
+  },
+  {
+    "id": "message-124",
+    "threadId": "thread-123",
+    "senderType": "assistant",
+    "role": "google/gemma-4-26b-a4b",
+    "content": "Budget approval is still blocked.",
+    "reasoningContent": "I should answer directly and mention the blocker first.",
+    "createdAt": "2026-04-03T12:05:00Z"
+  }
+]
+```
+
+The `role` field is an arbitrary text label. User messages store `User`. Assistant messages store the exact `chattingModel` value used for that response.
+
+### `POST /projects/{projectId}/threads/{threadId}/messages/stream`
+
+Starts a streamed LM Studio native chat request for the selected thread.
+
+The backend:
+
+- persists the user message in SQLite before contacting LM Studio
+- uses `POST /api/v1/chat` against the selected LM Studio base URL
+- keeps LM Studio continuation state in `lmstudio_last_response_id`
+- falls back to a transcript-based retry when the stored `previous_response_id` is no longer valid
+- stores the final assistant message, reasoning text, updated thread summary, and refreshed thread title after the stream completes
+
+The request body is:
+
+```json
+{
+  "content": "What is still blocked?"
+}
+```
+
+The response is `text/event-stream` and emits the following event types:
+
+- `reasoning.delta`
+- `reasoning.end`
+- `message.delta`
+- `message.end`
+- `completed`
+- `error`
+
+The renderer relies on `completed` as the canonical persisted result for the final thread and message records.
 
 ## Preload Bridge
 

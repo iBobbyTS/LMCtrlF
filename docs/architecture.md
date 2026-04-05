@@ -30,7 +30,7 @@ During development:
 The current implementation provides:
 
 - a shared contract package
-- a backend `/health` endpoint plus SQLite-backed project, document, and model-settings APIs
+- a backend `/health` endpoint plus SQLite-backed project, document, chat-thread, chat-message, and model-settings APIs
 - an Electron shell with preload access to the backend base URL
 - an Electron preload helper that resolves absolute file paths for imported renderer files
 - a Projects home screen backed by persisted project records
@@ -38,14 +38,18 @@ The current implementation provides:
 - a file-management view that locks page scrolling and keeps overflow inside the table region
 - a document import flow with drag-and-drop selection, a warning dialog, backend persistence, and polling progress updates
 - backend connectivity handling that blocks the UI behind a retry-only `Backend Unreachable` dialog whenever the sidecar cannot be reached
-- a chat view with a floating `Threads` button that controls a pinned panel on wide layouts, a temporary drawer on narrow layouts, and internal-only scrolling for threads and messages
+- a chat view with a floating `Threads` button that controls a pinned panel on wide layouts, a temporary drawer on narrow layouts, internal-only scrolling for threads and messages, and SQLite-backed thread/message history
 - a Settings surface with persisted provider selection, embedding/chat model fields, and local accessibility toggles
 
 ## Renderer Behavior
 
-The renderer now loads projects, documents, and model settings from the local FastAPI sidecar instead of seeding a mock workspace inside the UI.
+The renderer now loads projects, documents, model settings, chat threads, and chat messages from the local FastAPI sidecar instead of seeding a mock workspace inside the UI.
 
 The backend persists document metadata in SQLite and vectorized chunks in LanceDB. A single in-process background worker consumes queued documents, extracts PDF text page-by-page, requests embeddings from the selected LM Studio-compatible provider, and writes chunk vectors to the shared LanceDB table.
+
+The chat flow is independent from indexing. Thread and message history live in SQLite. The backend proxies streamed responses from LM Studio's native `POST /api/v1/chat` endpoint, stores the user/assistant turns after each successful exchange, and tracks the latest LM Studio `response_id` per thread so follow-up turns can use `previous_response_id` instead of rebuilding structured history on every request.
+
+The renderer keeps reasoning expansion local to the current session. Persisted reasoning text is available for every assistant message, but reopening a thread always starts with reasoning collapsed.
 
 The top-level UI exposes two primary tabs:
 
@@ -63,4 +67,6 @@ The repository does not yet include:
 - OCR or image extraction for PDFs
 - multi-worker or distributed indexing
 - live retrieval or answer synthesis against the stored vectors
+- document search or retrieval augmentation inside chat
+- non-LM Studio chat provider implementations
 - persisted accessibility settings

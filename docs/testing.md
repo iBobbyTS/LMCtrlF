@@ -19,6 +19,16 @@
 - background indexing moves documents to `ready` and writes LanceDB chunks
 - reindex replaces existing LanceDB chunks
 - indexing failures fall back to `paused`
+- empty projects return an empty persisted thread list
+- creating a thread persists `New thread N`
+- first chat turns persist both user and assistant messages
+- assistant messages persist the exact `chattingModel` key in `role`
+- assistant reasoning text is stored separately from visible message content
+- thread summaries update from the latest assistant message
+- follow-up turns reuse LM Studio `previous_response_id`
+- invalid LM Studio `previous_response_id` values fall back to a transcript retry
+- title-generation failures keep the provisional thread title
+- non-LM Studio providers return `501` for chat
 
 ### Shared Package
 
@@ -26,6 +36,7 @@
 - connection status validation accepts known values and rejects invalid ones
 - document status values stay stable
 - document status validation accepts known values and rejects invalid ones
+- chat sender type values stay stable
 
 ### Desktop Package
 
@@ -43,16 +54,21 @@
 - deleting a document updates the backend-backed project table state
 - selecting a file without a resolvable local path shows an inline error
 - file-management locks page scrolling and keeps overflow inside the table region
-- chat shows an empty state for projects without persisted threads and still allows local thread creation
+- chat shows an empty state for projects without persisted threads and allows backend-backed thread creation
+- chat streams saved user and assistant turns from the backend
+- assistant messages show the exact chatting-model label
+- thread hover tooltips expose saved summaries
+- saved reasoning defaults to collapsed whenever a thread is reopened
+- non-LM Studio providers disable chat sending in the renderer
 - model settings can be saved back to the backend
 - accessibility switches update locally
 
 ## Local Commands
 
-Run Python tests from the backend directory:
+Run backend tests from the repository root:
 
 ```bash
-PYTHONPATH=/tmp/lmctrlf-pydeps conda run -n lmctrlf-dev pytest
+conda run -n lmctrlf-dev pytest services/backend/tests
 ```
 
 Run workspace Node tests from the repository root:

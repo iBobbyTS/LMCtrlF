@@ -630,6 +630,15 @@ button {
   line-height: 1.65;
 }
 
+.message-bubble__role {
+  display: block;
+  margin-bottom: 10px;
+  font-size: 0.8rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
 .message-bubble p {
   margin: 8px 0 0;
 }
@@ -644,6 +653,44 @@ button {
   align-self: flex-end;
   color: #eff6ff;
   background: linear-gradient(135deg, #1d4ed8 0%, #2563eb 100%);
+}
+
+.message-reasoning {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.message-reasoning__toggle {
+  justify-self: flex-start;
+  padding: 0;
+  border: 0;
+  color: #78716c;
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-decoration: underline;
+  background: transparent;
+  cursor: pointer;
+}
+
+.message-reasoning__body {
+  display: grid;
+  gap: 8px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: rgba(245, 245, 244, 0.88);
+}
+
+.message-reasoning__label {
+  color: #57534e;
+  font-size: 0.8rem;
+  font-weight: 800;
+}
+
+.message-reasoning__body p {
+  margin: 0;
+  color: #57534e;
+  font-size: 0.92rem;
 }
 
 .composer-card {

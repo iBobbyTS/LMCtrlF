@@ -44,6 +44,33 @@ export interface DocumentRecord {
   updatedAt: string;
 }
 
+export const CHAT_SENDER_TYPES = ["user", "assistant"] as const;
+
+export type ChatSenderType = (typeof CHAT_SENDER_TYPES)[number];
+
+export const isChatSenderType = (value: unknown): value is ChatSenderType => {
+  return typeof value === "string" && CHAT_SENDER_TYPES.includes(value as ChatSenderType);
+};
+
+export interface ChatThreadRecord {
+  id: string;
+  projectId: string;
+  title: string;
+  summary: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ChatMessageRecord {
+  id: string;
+  threadId: string;
+  senderType: ChatSenderType;
+  role: string;
+  content: string;
+  reasoningContent: string;
+  createdAt: string;
+}
+
 export type ProviderId = "lm-studio" | "openai" | "anthropic";
 
 export interface ProviderSettingsRecord {
@@ -78,3 +105,35 @@ export interface ImportDocumentItem {
 export interface ImportDocumentsRequest {
   items: ImportDocumentItem[];
 }
+
+export interface CreateChatThreadRequest {}
+
+export interface SendChatMessageRequest {
+  content: string;
+}
+
+export type ChatStreamEvent =
+  | {
+      type: "reasoning.delta";
+      content: string;
+    }
+  | {
+      type: "reasoning.end";
+    }
+  | {
+      type: "message.delta";
+      content: string;
+    }
+  | {
+      type: "message.end";
+    }
+  | {
+      type: "completed";
+      thread: ChatThreadRecord;
+      userMessage: ChatMessageRecord;
+      assistantMessage: ChatMessageRecord;
+    }
+  | {
+      type: "error";
+      message: string;
+    };

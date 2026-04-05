@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 
 import App from "./App";
 
@@ -30,6 +30,25 @@ type MockDocument = {
   updatedAt: string;
 };
 
+type MockThread = {
+  id: string;
+  projectId: string;
+  title: string;
+  summary: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+type MockMessage = {
+  id: string;
+  threadId: string;
+  senderType: "user" | "assistant";
+  role: string;
+  content: string;
+  reasoningContent: string;
+  createdAt: string;
+};
+
 type MockSettings = {
   selectedProviderId: "lm-studio" | "openai" | "anthropic";
   providers: Array<{
@@ -42,6 +61,32 @@ type MockSettings = {
   }>;
 };
 
+type MockChatEvent =
+  | {
+      type: "reasoning.delta";
+      content: string;
+    }
+  | {
+      type: "reasoning.end";
+    }
+  | {
+      type: "message.delta";
+      content: string;
+    }
+  | {
+      type: "message.end";
+    }
+  | {
+      type: "completed";
+      thread: MockThread;
+      userMessage: MockMessage;
+      assistantMessage: MockMessage;
+    }
+  | {
+      type: "error";
+      message: string;
+    };
+
 const createJsonResponse = (payload: unknown, status = 200) => {
   return new Response(JSON.stringify(payload), {
     status,
@@ -51,16 +96,41 @@ const createJsonResponse = (payload: unknown, status = 200) => {
   });
 };
 
+const createSseResponse = (events: MockChatEvent[]) => {
+  const payload = events
+    .map((event) => `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`)
+    .join("");
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream({
+    start(controller) {
+      controller.enqueue(encoder.encode(payload));
+      controller.close();
+    }
+  });
+
+  return new Response(stream, {
+    status: 200,
+    headers: {
+      "Content-Type": "text/event-stream"
+    }
+  });
+};
+
 const createFetchMock = (seed?: {
   projects?: MockProject[];
   documentsByProject?: Record<string, MockDocument[]>;
   documentSequencesByProject?: Record<string, MockDocument[][]>;
+  threadsByProject?: Record<string, MockThread[]>;
+  messagesByThread?: Record<string, MockMessage[]>;
+  chatEventSequencesByThread?: Record<string, MockChatEvent[][]>;
   healthSequence?: Array<"ok" | "offline">;
   settings?: MockSettings;
   offlinePaths?: string[];
 }) => {
   let projectCounter = (seed?.projects?.length ?? 0) + 1;
   let documentCounter = 1;
+  let threadCounter = 1;
+  let messageCounter = 1;
   const healthSequence = [...(seed?.healthSequence ?? ["ok"])];
   const offlinePaths = new Set(seed?.offlinePaths ?? []);
   let settings: MockSettings = seed?.settings ?? {
@@ -71,7 +141,7 @@ const createFetchMock = (seed?: {
         name: "LM Studio",
         baseUrl: "http://127.0.0.1:1234/v1",
         embeddingModel: "text-embedding-embeddinggemma-300m",
-        chattingModel: "qwen/qwen3-8b",
+        chattingModel: "google/gemma-4-26b-a4b",
         apiKey: "lm-studio"
       },
       {
@@ -105,6 +175,25 @@ const createFetchMock = (seed?: {
       sequence.map((documents) => [...documents])
     ])
   ) as Record<string, MockDocument[][]>;
+  const threadsByProject = Object.fromEntries(
+    Object.entries(seed?.threadsByProject ?? {}).map(([projectId, threads]) => [projectId, [...threads]])
+  ) as Record<string, MockThread[]>;
+  const messagesByThread = Object.fromEntries(
+    Object.entries(seed?.messagesByThread ?? {}).map(([threadId, messages]) => [threadId, [...messages]])
+  ) as Record<string, MockMessage[]>;
+  const chatEventSequencesByThread = Object.fromEntries(
+    Object.entries(seed?.chatEventSequencesByThread ?? {}).map(([threadId, sequence]) => [
+      threadId,
+      sequence.map((events) => [...events])
+    ])
+  ) as Record<string, MockChatEvent[][]>;
+
+  const getSelectedProvider = () => {
+    return (
+      settings.providers.find((provider) => provider.id === settings.selectedProviderId) ??
+      settings.providers[0]
+    );
+  };
 
   return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const requestUrl = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
@@ -153,6 +242,7 @@ const createFetchMock = (seed?: {
       projectCounter += 1;
       projects.unshift(project);
       documentsByProject[project.id] = [];
+      threadsByProject[project.id] = [];
       return createJsonResponse(project, 201);
     }
 
@@ -242,6 +332,130 @@ const createFetchMock = (seed?: {
       return createJsonResponse(updatedDocument);
     }
 
+    const listThreadsMatch = url.pathname.match(/^\/projects\/([^/]+)\/threads$/);
+    if (listThreadsMatch && method === "GET") {
+      const [, projectId] = listThreadsMatch;
+      return createJsonResponse(threadsByProject[projectId] ?? []);
+    }
+
+    if (listThreadsMatch && method === "POST") {
+      const [, projectId] = listThreadsMatch;
+      const threadCount = (threadsByProject[projectId] ?? []).length + 1;
+      const timestamp = new Date(Date.UTC(2026, 3, 3, 12, 0, threadCounter)).toISOString();
+      const thread: MockThread = {
+        id: `thread-${threadCounter}`,
+        projectId,
+        title: `New thread ${threadCount}`,
+        summary: "",
+        createdAt: timestamp,
+        updatedAt: timestamp
+      };
+      threadCounter += 1;
+      threadsByProject[projectId] = [thread, ...(threadsByProject[projectId] ?? [])];
+      messagesByThread[thread.id] = [];
+      return createJsonResponse(thread, 201);
+    }
+
+    const listMessagesMatch = url.pathname.match(/^\/projects\/([^/]+)\/threads\/([^/]+)\/messages$/);
+    if (listMessagesMatch && method === "GET") {
+      const [, , threadId] = listMessagesMatch;
+      return createJsonResponse(messagesByThread[threadId] ?? []);
+    }
+
+    const streamMessagesMatch = url.pathname.match(
+      /^\/projects\/([^/]+)\/threads\/([^/]+)\/messages\/stream$/
+    );
+    if (streamMessagesMatch && method === "POST") {
+      const [, projectId, threadId] = streamMessagesMatch;
+      const body = JSON.parse(String(init?.body ?? "{}")) as { content: string };
+      const selectedProvider = getSelectedProvider();
+
+      if (settings.selectedProviderId !== "lm-studio") {
+        return createJsonResponse(
+          { detail: `${selectedProvider.name} chat is not implemented yet.` },
+          501
+        );
+      }
+
+      const sequence = chatEventSequencesByThread[threadId];
+      const timestamp = new Date(Date.UTC(2026, 3, 3, 12, 0, messageCounter)).toISOString();
+      const defaultUserMessage: MockMessage = {
+        id: `message-${messageCounter}`,
+        threadId,
+        senderType: "user",
+        role: "User",
+        content: body.content,
+        reasoningContent: "",
+        createdAt: timestamp
+      };
+      messageCounter += 1;
+      const defaultAssistantMessage: MockMessage = {
+        id: `message-${messageCounter}`,
+        threadId,
+        senderType: "assistant",
+        role: selectedProvider.chattingModel,
+        content: "Thanks for the question.",
+        reasoningContent: "Thinking through the answer.",
+        createdAt: new Date(Date.UTC(2026, 3, 3, 12, 0, messageCounter)).toISOString()
+      };
+      messageCounter += 1;
+      const currentThread = (threadsByProject[projectId] ?? []).find((thread) => thread.id === threadId);
+      const updatedThread: MockThread = currentThread
+        ? {
+            ...currentThread,
+            title: currentThread.title === "New thread 1" ? "Launch Notes" : currentThread.title,
+            summary: defaultAssistantMessage.content,
+            updatedAt: defaultAssistantMessage.createdAt
+          }
+        : {
+            id: threadId,
+            projectId,
+            title: "Launch Notes",
+            summary: defaultAssistantMessage.content,
+            createdAt: timestamp,
+            updatedAt: defaultAssistantMessage.createdAt
+          };
+
+      const events =
+        sequence && sequence.length > 0
+          ? sequence.length > 1
+            ? sequence.shift() ?? []
+            : sequence[0] ?? []
+          : [
+              { type: "reasoning.delta", content: "Thinking through the answer." },
+              { type: "reasoning.end" },
+              { type: "message.delta", content: "Thanks for the question." },
+              { type: "message.end" },
+              {
+                type: "completed",
+                thread: updatedThread,
+                userMessage: defaultUserMessage,
+                assistantMessage: defaultAssistantMessage
+              }
+            ];
+
+      const completedEvent = events.find((event) => event.type === "completed");
+      if (completedEvent && completedEvent.type === "completed") {
+        threadsByProject[projectId] = [
+          completedEvent.thread,
+          ...(threadsByProject[projectId] ?? []).filter(
+            (thread) => thread.id !== completedEvent.thread.id
+          )
+        ];
+        messagesByThread[threadId] = [
+          ...(messagesByThread[threadId] ?? []).filter(
+            (message) =>
+              message.id !== completedEvent.userMessage.id &&
+              message.id !== completedEvent.assistantMessage.id
+          ),
+          completedEvent.userMessage,
+          completedEvent.assistantMessage
+        ];
+      }
+
+      return createSseResponse(events);
+    }
+
     return new Response("Not found", { status: 404 });
   });
 };
@@ -250,7 +464,7 @@ const installBridge = () => {
   window.lmctrlf = {
     getBackendBaseUrl: () => "http://127.0.0.1:8000",
     getPathForFile: (file: File) => {
-      return ((file as File & { path?: string }).path ?? "");
+      return (file as File & { path?: string }).path ?? "";
     }
   };
 };
@@ -385,12 +599,12 @@ describe("App", () => {
     });
 
     fireEvent.click(screen.getByRole("button", { name: "Import" }));
-    expect(screen.getByRole("dialog", { name: "WARNING" })).toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: "Import files?" })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "I Understand & Import" }));
 
     await waitFor(() => {
-      expect(screen.queryByRole("dialog", { name: "WARNING" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("dialog", { name: "Import files?" })).not.toBeInTheDocument();
     });
 
     expect(screen.getByText("launch-overview.pdf")).toBeInTheDocument();
@@ -412,6 +626,7 @@ describe("App", () => {
       filePath: "/tmp/launch-overview.pdf",
       md5: "md5-1",
       status: "queued",
+      progress: 0,
       createdAt: "2026-04-03T12:00:00.000Z",
       updatedAt: "2026-04-03T12:00:00.000Z"
     };
@@ -433,7 +648,7 @@ describe("App", () => {
     });
   });
 
-  it("shows an empty chat state and lets users create a local thread", async () => {
+  it("creates a backend-backed thread and shows the saved empty chat state", async () => {
     const seedProject: MockProject = {
       id: "project-1",
       name: "Field Notes",
@@ -443,7 +658,8 @@ describe("App", () => {
     };
     const fetchMock = createFetchMock({
       projects: [seedProject],
-      documentsByProject: { "project-1": [] }
+      documentsByProject: { "project-1": [] },
+      threadsByProject: { "project-1": [] }
     });
     globalThis.fetch = fetchMock as typeof fetch;
 
@@ -456,6 +672,220 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: "New Thread" }));
 
     expect(await screen.findByRole("heading", { name: "New thread 1" })).toBeInTheDocument();
+    expect(screen.getByText("No messages yet")).toBeInTheDocument();
+  });
+
+  it("streams a chat reply, stores the model role, and exposes thread summary on hover", async () => {
+    const seedProject: MockProject = {
+      id: "project-1",
+      name: "Field Notes",
+      accent: "#c2410c",
+      createdAt: "2026-04-03T12:00:00.000Z",
+      updatedAt: "2026-04-03T12:00:00.000Z"
+    };
+    const seedThread: MockThread = {
+      id: "thread-1",
+      projectId: "project-1",
+      title: "New thread 1",
+      summary: "",
+      createdAt: "2026-04-03T12:00:00.000Z",
+      updatedAt: "2026-04-03T12:00:00.000Z"
+    };
+    const completedThread: MockThread = {
+      ...seedThread,
+      title: "Launch Notes",
+      summary: "Launch blockers are the pending review and the missing budget sign-off.",
+      updatedAt: "2026-04-03T12:05:00.000Z"
+    };
+    const userMessage: MockMessage = {
+      id: "message-user-1",
+      threadId: "thread-1",
+      senderType: "user",
+      role: "User",
+      content: "What are the blockers?",
+      reasoningContent: "",
+      createdAt: "2026-04-03T12:04:00.000Z"
+    };
+    const assistantMessage: MockMessage = {
+      id: "message-assistant-1",
+      threadId: "thread-1",
+      senderType: "assistant",
+      role: "google/gemma-4-26b-a4b",
+      content: "Launch blockers are the pending review and the missing budget sign-off.",
+      reasoningContent: "I should summarize the blockers clearly.",
+      createdAt: "2026-04-03T12:05:00.000Z"
+    };
+    const fetchMock = createFetchMock({
+      projects: [seedProject],
+      documentsByProject: { "project-1": [] },
+      threadsByProject: { "project-1": [seedThread] },
+      messagesByThread: { "thread-1": [] },
+      chatEventSequencesByThread: {
+        "thread-1": [
+          [
+            { type: "reasoning.delta", content: "I should summarize the blockers clearly." },
+            { type: "reasoning.end" },
+            { type: "message.delta", content: assistantMessage.content },
+            { type: "message.end" },
+            {
+              type: "completed",
+              thread: completedThread,
+              userMessage,
+              assistantMessage
+            }
+          ]
+        ]
+      }
+    });
+    globalThis.fetch = fetchMock as typeof fetch;
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /Field Notes 0 files/i }));
+    fireEvent.click(screen.getByRole("button", { name: "Chat" }));
+
+    expect(await screen.findByRole("heading", { name: "New thread 1" })).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.queryByText("Loading conversation")).not.toBeInTheDocument();
+    });
+    await waitFor(() => {
+      expect(screen.getByRole("textbox")).not.toBeDisabled();
+    });
+    fireEvent.change(screen.getByRole("textbox"), {
+      target: { value: "What are the blockers?" }
+    });
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Send" })).not.toBeDisabled();
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Send" }));
+      await Promise.resolve();
+    });
+
+    expect(await screen.findByText("What are the blockers?")).toBeInTheDocument();
+    expect(await screen.findByText("google/gemma-4-26b-a4b")).toBeInTheDocument();
+    expect(
+      await screen.findByText("Launch blockers are the pending review and the missing budget sign-off.")
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Show thinking process" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Launch Notes" })).toHaveAttribute(
+      "title",
+      completedThread.summary
+    );
+  });
+
+  it("defaults saved reasoning to collapsed when reopening a thread", async () => {
+    const seedProject: MockProject = {
+      id: "project-1",
+      name: "Field Notes",
+      accent: "#c2410c",
+      createdAt: "2026-04-03T12:00:00.000Z",
+      updatedAt: "2026-04-03T12:00:00.000Z"
+    };
+    const seedThread: MockThread = {
+      id: "thread-1",
+      projectId: "project-1",
+      title: "Launch Notes",
+      summary: "Summary",
+      createdAt: "2026-04-03T12:00:00.000Z",
+      updatedAt: "2026-04-03T12:05:00.000Z"
+    };
+    const assistantMessage: MockMessage = {
+      id: "message-assistant-1",
+      threadId: "thread-1",
+      senderType: "assistant",
+      role: "google/gemma-4-26b-a4b",
+      content: "The blockers are budget and review.",
+      reasoningContent: "I should mention budget first.",
+      createdAt: "2026-04-03T12:05:00.000Z"
+    };
+    const fetchMock = createFetchMock({
+      projects: [seedProject],
+      documentsByProject: { "project-1": [] },
+      threadsByProject: { "project-1": [seedThread] },
+      messagesByThread: { "thread-1": [assistantMessage] }
+    });
+    globalThis.fetch = fetchMock as typeof fetch;
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /Field Notes 0 files/i }));
+    fireEvent.click(screen.getByRole("button", { name: "Chat" }));
+
+    expect(await screen.findByRole("button", { name: "Show thinking process" })).toBeInTheDocument();
+    expect(screen.queryByText("I should mention budget first.")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Show thinking process" }));
+    expect(await screen.findByText("I should mention budget first.")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "File management" }));
+    fireEvent.click(screen.getByRole("button", { name: "Chat" }));
+
+    expect(await screen.findByRole("button", { name: "Show thinking process" })).toBeInTheDocument();
+    expect(screen.queryByText("I should mention budget first.")).not.toBeInTheDocument();
+  });
+
+  it("disables chat sending for non-lm-studio providers", async () => {
+    const seedProject: MockProject = {
+      id: "project-1",
+      name: "Field Notes",
+      accent: "#c2410c",
+      createdAt: "2026-04-03T12:00:00.000Z",
+      updatedAt: "2026-04-03T12:00:00.000Z"
+    };
+    const seedThread: MockThread = {
+      id: "thread-1",
+      projectId: "project-1",
+      title: "New thread 1",
+      summary: "",
+      createdAt: "2026-04-03T12:00:00.000Z",
+      updatedAt: "2026-04-03T12:00:00.000Z"
+    };
+    const fetchMock = createFetchMock({
+      projects: [seedProject],
+      documentsByProject: { "project-1": [] },
+      threadsByProject: { "project-1": [seedThread] },
+      messagesByThread: { "thread-1": [] },
+      settings: {
+        selectedProviderId: "openai",
+        providers: [
+          {
+            id: "lm-studio",
+            name: "LM Studio",
+            baseUrl: "http://127.0.0.1:1234/v1",
+            embeddingModel: "text-embedding-embeddinggemma-300m",
+            chattingModel: "google/gemma-4-26b-a4b",
+            apiKey: "lm-studio"
+          },
+          {
+            id: "openai",
+            name: "OpenAI",
+            baseUrl: "https://api.openai.com/v1",
+            embeddingModel: "text-embedding-3-small",
+            chattingModel: "gpt-5-mini",
+            apiKey: "sk-test"
+          },
+          {
+            id: "anthropic",
+            name: "Anthropic",
+            baseUrl: "https://api.anthropic.com",
+            embeddingModel: "text-embedding-embeddinggemma-300m",
+            chattingModel: "claude-sonnet-4-5",
+            apiKey: "sk-ant-test"
+          }
+        ]
+      }
+    });
+    globalThis.fetch = fetchMock as typeof fetch;
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /Field Notes 0 files/i }));
+    fireEvent.click(screen.getByRole("button", { name: "Chat" }));
+
+    expect(await screen.findByDisplayValue("")).toBeDisabled();
+    expect(screen.getByText("OpenAI (not implemented yet)")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Send" })).toBeDisabled();
   });
 
   it("shows an error when a selected file has no resolvable local path", async () => {

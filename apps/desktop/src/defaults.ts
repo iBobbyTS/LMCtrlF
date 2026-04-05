@@ -1,21 +1,5 @@
 import type { ProviderId, ProviderSettingsRecord } from "@lmctrlf/shared";
 
-export type MessageRole = "user" | "assistant";
-
-export interface ThreadMessage {
-  id: string;
-  role: MessageRole;
-  content: string;
-}
-
-export interface ChatThread {
-  id: string;
-  title: string;
-  updatedAt: string;
-  summary: string;
-  messages: ThreadMessage[];
-}
-
 export interface ProviderDraft extends ProviderSettingsRecord {}
 
 export interface AccessibilityOption {
