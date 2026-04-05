@@ -5,11 +5,16 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const defaultRendererEntry = path.resolve(__dirname, "../static/index.html");
+const defaultPreloadEntry = path.resolve(__dirname, "./preload.cjs");
 const defaultBackendBaseUrl = "http://127.0.0.1:8000";
 const defaultBackendWorkingDirectory = path.resolve(__dirname, "../../../services/backend");
 
 export const resolveRendererEntry = (rendererUrl?: string): string => {
   return rendererUrl && rendererUrl.length > 0 ? rendererUrl : defaultRendererEntry;
+};
+
+export const resolvePreloadEntry = (): string => {
+  return defaultPreloadEntry;
 };
 
 export const resolveBackendBaseUrl = (backendUrl?: string): string => {

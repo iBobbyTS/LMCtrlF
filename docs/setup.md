@@ -17,6 +17,9 @@ conda activate lmctrlf-dev
 
 The backend project is located in `services/backend`.
 
+By default the backend stores SQLite data in `services/backend/data/lmctrlf.sqlite3`.
+Override this location with `LMCTRLF_DATABASE_PATH` if you need a different local database path.
+
 ## Node Dependencies
 
 Install workspace dependencies from the repository root:

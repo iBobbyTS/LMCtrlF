@@ -7,27 +7,35 @@
 - `/health` returns HTTP 200
 - `/health` returns `{ "status": "ok" }`
 - unknown routes return HTTP 404
+- empty SQLite databases return an empty project list
+- project creation persists records in SQLite
+- document import persists `file_path`, `md5`, and `queued` status
+- repeat imports of the same unchanged file do not create duplicates
+- repeat imports of a changed file mark the document as `file_changed`
+- document deletion removes persisted records
+- SQLite-backed project and document data survives backend reinitialization
 
 ### Shared Package
 
 - connection status values stay stable
 - connection status validation accepts known values and rejects invalid ones
+- document status values stay stable
+- document status validation accepts known values and rejects invalid ones
 
 ### Desktop Package
 
 - desktop runtime config resolves fallback values correctly
-- renderer shows the Projects page with direct project cards and no backend fetches
+- renderer loads an empty Projects state from the backend
+- startup health-check failures show a retry-only `Backend Unreachable` dialog
+- retrying after the backend recovers closes the dialog and loads the workspace
 - creating a project requires a modal prompt for the project name
-- closing the modal dismisses project creation without state changes
-- creating a named project opens an empty project workspace
-- clicking a project card opens the file-management page
-- document actions update project table state
+- creating a named project persists the record and opens an empty project workspace
+- importing a document requires an explicit warning acknowledgement
+- imported documents appear with `queued` status
+- deleting a document updates the backend-backed project table state
+- selecting a file without a resolvable local path shows an inline error
 - file-management locks page scrolling and keeps overflow inside the table region
-- chat view switches between project threads from the left-hand list
-- chat renders the `Threads` control as a floating button instead of a header item
-- chat locks page scrolling and keeps overflow inside thread and message containers
-- narrow chat layouts open threads in a temporary drawer and close it after selection
-- wide chat layouts can collapse and restore the pinned thread panel
+- chat shows an empty state for projects without persisted threads and still allows local thread creation
 - settings fields and accessibility switches update locally
 
 ## Local Commands
