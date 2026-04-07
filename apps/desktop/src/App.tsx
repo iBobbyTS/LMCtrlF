@@ -789,6 +789,20 @@ const App = () => {
       return;
     }
 
+    const currentProvider = providerList.find((provider) => provider.id === selectedProviderId);
+    const savedProvider = savedModelSettings?.providers.find((provider) => provider.id === selectedProviderId);
+    
+    const embeddingChanged =
+      !!currentProvider &&
+      !!savedProvider &&
+      currentProvider.embeddingModel.trim() !== savedProvider.embeddingModel.trim();
+
+    if (embeddingChanged) {
+      setPendingSettingsPayload(payload);
+      setShowEmbeddingChangeDialog(true);
+      return;
+    }
+
     try {
       setIsSavingModelSettings(true);
       setWorkspaceError("");
@@ -796,12 +810,61 @@ const App = () => {
       setBackendDialogMessage("");
       setProviderList(saved.providers);
       setSelectedProviderId(saved.selectedProviderId);
+      setSavedModelSettings(saved);
     } catch (error) {
       handleWorkspaceError(error);
     } finally {
       setIsSavingModelSettings(false);
     }
   };
+
+  const handleRevertEmbeddingModelChange = () => {
+    if (savedModelSettings) {
+      setProviderList(savedModelSettings.providers);
+      setSelectedProviderId(savedModelSettings.selectedProviderId);
+    }
+    setPendingSettingsPayload(null);
+    setShowEmbeddingChangeDialog(false);
+  };
+
+  const handleContinueEmbeddingModelChange = async () => {
+    if (!pendingSettingsPayload) {
+      return;
+    }
+
+    try {
+      setIsSavingModelSettings(true);
+      setWorkspaceError("");
+
+      const saved = await updateModelSettings(pendingSettingsPayload);
+      setBackendDialogMessage("");
+      setProviderList(saved.providers);
+      setSelectedProviderId(saved.selectedProviderId);
+      setSavedModelSettings(saved);
+
+      for (const [projectId, docs] of Object.entries(documentsByProject)) {
+        for (const doc of docs) {
+          if (doc.status === "ready" || doc.status === "paused" || doc.status === "file_changed") {
+            await reindexProjectDocument(projectId, doc.id);
+          }
+        }
+
+        const refreshed = await listProjectDocuments(projectId);
+        setDocumentsByProject((current) => ({
+          ...current,
+          [projectId]: refreshed
+        }));
+      }
+
+      setPendingSettingsPayload(null);
+      setShowEmbeddingChangeDialog(false);
+    } catch (error) {
+      handleWorkspaceError(error);
+    } finally {
+      setIsSavingModelSettings(false);
+    }
+  };
+
 
 
   const handleToggleAccessibility = (optionId: string) => {
@@ -1753,6 +1816,36 @@ const App = () => {
           </div>
         </div>
       ) : null}
+      {showEmbeddingChangeDialog ? (
+        <div className="dialog-backdrop" role="presentation">
+          <div
+            aria-describedby="embedding-change-description"
+            aria-labelledby="embedding-change-title"
+            aria-modal="true"
+            className="dialog-card"
+            role="dialog"
+          >
+            <h2 id="embedding-change-title">Embedding model changed</h2>
+            <p id="embedding-change-description">
+              If you change your embedding model choice, existing indexing becomes invalid and documents should be reindexed.
+            </p>
+
+            <div className="dialog-actions">
+              <button className="ghost-action" onClick={handleRevertEmbeddingModelChange} type="button">
+                Revert
+              </button>
+              <button
+                className="primary-action"
+                onClick={() => void handleContinueEmbeddingModelChange()}
+                type="button"
+              >
+                Continue
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
 
       {renderBackendDialog()}
     </main>
