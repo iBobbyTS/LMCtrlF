@@ -735,12 +735,54 @@ const App = () => {
       )
     );
   };
+  const buildValidatedModelSettingsPayload = (): ModelSettingsResponse | null => {
+    const trimmedProviders = providerList.map((provider) => ({
+      ...provider,
+      name: provider.name.trim(),
+      baseUrl: provider.baseUrl.trim(),
+      embeddingModel: provider.embeddingModel.trim(),
+      chattingModel: provider.chattingModel.trim(),
+      apiKey: provider.apiKey.trim()
+    }));
+
+    const selectedProvider = trimmedProviders.find((provider) => provider.id === selectedProviderId);
+    if (!selectedProvider) {
+      setWorkspaceError("Selected provider is invalid.");
+      return null;
+    }
+
+    if (!selectedProvider.name) {
+      setWorkspaceError("Provider name is required.");
+      return null;
+    }
+
+    if (!selectedProvider.baseUrl) {
+      setWorkspaceError("Base URL is required.");
+      return null;
+    }
+
+    if (!selectedProvider.embeddingModel) {
+      setWorkspaceError("Embedding model is required.");
+      return null;
+    }
+
+    if (!selectedProvider.chattingModel) {
+      setWorkspaceError("Chatting model is required.");
+      return null;
+    }
+
+    return {
+      selectedProviderId,
+      providers: trimmedProviders
+    };
+  };
+
 
   const handleSaveModelSettings = async () => {
-    const payload: ModelSettingsResponse = {
-      selectedProviderId,
-      providers: providerList
-    };
+    const payload = buildValidatedModelSettingsPayload();
+    if (!payload) {
+      return;
+    }
 
     try {
       setIsSavingModelSettings(true);
@@ -755,6 +797,7 @@ const App = () => {
       setIsSavingModelSettings(false);
     }
   };
+
 
   const handleToggleAccessibility = (optionId: string) => {
     setAccessibilityList((current) =>
