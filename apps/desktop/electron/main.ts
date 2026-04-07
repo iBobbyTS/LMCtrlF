@@ -39,10 +39,6 @@ const createWindow = async (backendBaseUrl: string): Promise<void> => {
 };
 
 const startBackendSidecar = async (): Promise<string> => {
-  if (app.isPackaged) {
-    return resolveBackendBaseUrl(process.env.LMCTRLF_BACKEND_URL);
-  }
-
   if (process.env.LMCTRLF_BACKEND_URL) {
     const backendBaseUrl = resolveBackendBaseUrl(process.env.LMCTRLF_BACKEND_URL);
     await waitForBackendHealth(backendBaseUrl);
@@ -53,7 +49,13 @@ const startBackendSidecar = async (): Promise<string> => {
   const preferredPort = resolveBackendPort();
   const backendPort = await findAvailablePort(backendHost, preferredPort);
   const backendBaseUrl = buildBackendBaseUrl(backendHost, backendPort);
-  const launch = getBackendLaunchCommand(backendPort);
+  const launch = getBackendLaunchCommand({
+    packaged: app.isPackaged,
+    platform: process.platform,
+    port: backendPort,
+    resourcesPath: process.resourcesPath,
+    userDataPath: app.getPath("userData")
+  });
 
   backendProcess = spawn(launch.command, launch.args, {
     cwd: launch.cwd,

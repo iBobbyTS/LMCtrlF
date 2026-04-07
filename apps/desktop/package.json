@@ -3,10 +3,15 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "main": "./electron/main.ts",
+  "main": "./dist/electron/main.cjs",
   "scripts": {
+    "build": "pnpm run build:renderer && pnpm run build:electron",
+    "build:electron": "node ./scripts/build.mjs",
+    "build:renderer": "vite build",
     "dev": "node ./scripts/dev.mjs",
     "dev:renderer": "vite --host 127.0.0.1 --port 5173",
+    "package:mac": "sh ./scripts/package-mac.sh",
+    "package:win": "powershell -ExecutionPolicy Bypass -File ./scripts/package-win.ps1",
     "test": "vitest run"
   },
   "dependencies": {

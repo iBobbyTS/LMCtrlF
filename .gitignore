@@ -213,6 +213,10 @@ __marimo__/
 
 # Node
 node_modules/
+apps/desktop/dist/
+apps/desktop/release/
+services/backend/build/
+services/backend/dist/
 
 # Backend runtime data
 services/backend/data/

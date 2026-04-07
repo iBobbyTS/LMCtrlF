@@ -6,6 +6,7 @@ This directory contains repository-level documentation for the current implement
 
 - `architecture.md`: High-level repository and runtime architecture.
 - `setup.md`: Local development setup for Node and Python.
+- `packaging.md`: Release packaging workflow for the desktop shell and bundled backend.
 - `api.md`: Backend and preload-facing contracts currently implemented.
 - `testing.md`: Test scope and local test commands.
 
