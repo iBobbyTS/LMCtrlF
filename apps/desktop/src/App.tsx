@@ -35,7 +35,6 @@ import {
   type ProviderDraft
 } from "./defaults";
 import "./styles.css";
-import { render } from "@testing-library/react";
 
 type AppView = "projects" | "settings" | "project-files" | "project-chat" | "project-import";
 type ThreadMap = Record<string, ChatThreadRecord[]>;
@@ -280,6 +279,10 @@ const App = () => {
   const [selectedProviderId, setSelectedProviderId] = useState<ProviderId>(
     providerProfiles[0]?.id ?? defaultSelectedProviderId
   );
+  const [savedModelSettings, setSavedModelSettings] = useState<ModelSettingsResponse | null>(null);
+  const [showEmbeddingChangeDialog, setShowEmbeddingChangeDialog] = useState(false);
+  const [pendingSettingsPayload, setPendingSettingsPayload] = useState<ModelSettingsResponse | null>(null);
+
   const [accessibilityList, setAccessibilityList] =
     useState<AccessibilityOption[]>(cloneAccessibility);
   const [isCreateProjectDialogOpen, setIsCreateProjectDialogOpen] = useState(false);
@@ -390,6 +393,7 @@ const App = () => {
 
       setProviderList(settings.providers);
       setSelectedProviderId(settings.selectedProviderId);
+      setSavedModelSettings(settings);
       setProjectList(nextProjects);
       setDocumentsByProject(Object.fromEntries(nextDocuments));
       setThreadsByProject(Object.fromEntries(nextProjects.map((project) => [project.id, []])));
