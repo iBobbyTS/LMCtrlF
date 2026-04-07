@@ -35,6 +35,7 @@ import {
   type ProviderDraft
 } from "./defaults";
 import "./styles.css";
+import { render } from "@testing-library/react";
 
 type AppView = "projects" | "settings" | "project-files" | "project-chat" | "project-import";
 type ThreadMap = Record<string, ChatThreadRecord[]>;
@@ -1462,6 +1463,7 @@ const App = () => {
 
     return (
       <section className="settings-page">
+        {renderWorkspaceError()}
         <section className="settings-card">
           <h1>Model settings</h1>
 
