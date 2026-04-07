@@ -1054,6 +1054,126 @@ describe("App", () => {
     });
   });
 
+  it("shows a confirmation dialog when embedding model changes before saving", async () => {
+  const seedProject: MockProject = {
+    id: "project-1",
+    name: "Field Notes",
+    accent: "#c2410c",
+    createdAt: "2026-04-03T12:00:00.000Z",
+    updatedAt: "2026-04-03T12:00:00.000Z"
+  };
+
+  const fetchMock = createFetchMock({
+    projects: [seedProject],
+    documentsByProject: { "project-1": [] }
+  });
+  globalThis.fetch = fetchMock as typeof fetch;
+
+  render(<App />);
+
+  await screen.findByRole("button", { name: /Field Notes 0 files/i });
+  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+
+  fireEvent.change(screen.getByLabelText("Embedding model"), {
+    target: { value: "custom-embedding-model" }
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Save settings" }));
+
+  expect(
+    await screen.findByRole("dialog", { name: "Embedding model changed" })
+  ).toBeInTheDocument();
+});
+
+it("reverts embedding model changes without saving", async () => {
+  const fetchMock = createFetchMock();
+  globalThis.fetch = fetchMock as typeof fetch;
+
+  render(<App />);
+
+  await screen.findByText("No projects yet");
+  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+
+  const embeddingInput = screen.getByLabelText("Embedding model") as HTMLInputElement;
+  const originalValue = embeddingInput.value;
+
+  fireEvent.change(embeddingInput, { target: { value: "custom-embedding-model" } });
+  fireEvent.click(screen.getByRole("button", { name: "Save settings" }));
+
+  expect(await screen.findByRole("dialog", { name: "Embedding model changed" })).toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole("button", { name: "Revert" }));
+
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog", { name: "Embedding model changed" })).not.toBeInTheDocument();
+  });
+
+  expect((screen.getByLabelText("Embedding model") as HTMLInputElement).value).toBe(originalValue);
+
+  const settingsPutCalls = fetchMock.mock.calls.filter(
+    (call) =>
+      call[0] === "http://127.0.0.1:8000/settings/model" &&
+      (call[1] as RequestInit | undefined)?.method === "PUT"
+  );
+  expect(settingsPutCalls).toHaveLength(0);
+});
+
+it("continues embedding model changes by saving and reindexing existing documents", async () => {
+  const seedProject: MockProject = {
+    id: "project-1",
+    name: "Field Notes",
+    accent: "#c2410c",
+    createdAt: "2026-04-03T12:00:00.000Z",
+    updatedAt: "2026-04-03T12:00:00.000Z"
+  };
+
+  const readyDocument: MockDocument = {
+    id: "document-1",
+    projectId: "project-1",
+    name: "launch-overview.pdf",
+    filePath: "/tmp/launch-overview.pdf",
+    md5: "md5-1",
+    status: "ready",
+    progress: 100,
+    createdAt: "2026-04-03T12:00:00.000Z",
+    updatedAt: "2026-04-03T12:00:00.000Z"
+  };
+
+  const fetchMock = createFetchMock({
+    projects: [seedProject],
+    documentsByProject: { "project-1": [readyDocument] }
+  });
+  globalThis.fetch = fetchMock as typeof fetch;
+
+  render(<App />);
+
+  await screen.findByRole("button", { name: /Field Notes 1 files/i });
+  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+
+  fireEvent.change(screen.getByLabelText("Embedding model"), {
+    target: { value: "custom-embedding-model" }
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Save settings" }));
+
+  expect(await screen.findByRole("dialog", { name: "Embedding model changed" })).toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+
+  await waitFor(() => {
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://127.0.0.1:8000/settings/model",
+      expect.objectContaining({ method: "PUT" })
+    );
+  });
+
+  await waitFor(() => {
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://127.0.0.1:8000/projects/project-1/documents/document-1/reindex",
+      expect.objectContaining({ method: "POST" })
+    );
+  });
+});
+
+
   it(
     "polls indexing progress until a document becomes ready",
     async () => {
