@@ -43,6 +43,8 @@
 ### Desktop Package
 
 - desktop runtime config resolves fallback values correctly
+- desktop runtime config resolves built renderer and preload paths for packaged builds
+- packaged backend launches resolve bundled executable and user-data-backed database paths
 - renderer loads an empty Projects state from the backend
 - startup health-check failures show a retry-only `Backend Unreachable` dialog
 - later backend connection failures also reuse the retry-only `Backend Unreachable` dialog
@@ -66,6 +68,7 @@
 - non-LM Studio providers disable chat sending in the renderer
 - model settings can be saved back to the backend
 - accessibility switches update locally
+- packaging scripts and builder config are prepared, but release artifact generation is not executed in the automated test suite
 
 ## Local Commands
 

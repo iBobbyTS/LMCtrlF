@@ -73,7 +73,7 @@ app = create_app(settings)
 
 def main() -> None:
     uvicorn.run(
-        "app.main:app",
+        app,
         host=settings.backend_host,
         port=settings.backend_port,
         reload=False,

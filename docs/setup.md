@@ -35,6 +35,22 @@ corepack prepare pnpm@10.14.0 --activate
 pnpm install
 ```
 
+## Desktop Packaging Prerequisites
+
+The packaging workflow requires `PyInstaller` inside the `lmctrlf-dev` Conda environment because the Electron application bundles a frozen Python sidecar for release builds.
+
+Packaging commands:
+
+```bash
+pnpm package:desktop:mac
+```
+
+```powershell
+pnpm package:desktop:win
+```
+
+The Windows packaging command is intended for Windows machines or CI only.
+
 ## Running the Renderer and Electron Shell
 
 Use the desktop package from the repository root:

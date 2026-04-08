@@ -5,6 +5,8 @@
   "packageManager": "pnpm@10.14.0",
   "scripts": {
     "dev:desktop": "pnpm --filter @lmctrlf/desktop dev",
+    "package:desktop:mac": "pnpm --filter @lmctrlf/desktop package:mac",
+    "package:desktop:win": "pnpm --filter @lmctrlf/desktop package:win",
     "test": "pnpm --recursive test",
     "test:desktop": "pnpm --filter @lmctrlf/desktop test",
     "test:shared": "pnpm --filter @lmctrlf/shared test"

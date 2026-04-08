@@ -1,0 +1,41 @@
+{
+  "appId": "com.lmctrlf.desktop",
+  "productName": "LMCtrlF",
+  "asar": true,
+  "directories": {
+    "output": "release"
+  },
+  "files": [
+    "dist/electron/**/*",
+    "dist/renderer/**/*",
+    "package.json"
+  ],
+  "extraResources": [
+    {
+      "from": "dist/backend",
+      "to": "backend",
+      "filter": [
+        "**/*"
+      ]
+    }
+  ],
+  "mac": {
+    "category": "public.app-category.productivity",
+    "target": [
+      {
+        "target": "dir"
+      }
+    ]
+  },
+  "win": {
+    "target": [
+      {
+        "target": "nsis"
+      }
+    ]
+  },
+  "nsis": {
+    "allowToChangeInstallationDirectory": true,
+    "oneClick": false
+  }
+}

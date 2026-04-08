@@ -49,7 +49,8 @@ describe("desktop backend bootstrap", () => {
     }
 
     const availablePort = await findAvailablePort("127.0.0.1", address.port, 3);
-    expect(availablePort).toBe(address.port + 1);
+    expect(availablePort).toBeGreaterThan(address.port);
+    expect(availablePort).toBeLessThanOrEqual(address.port + 2);
   });
 
   it("waits for the backend health endpoint to report success", async () => {

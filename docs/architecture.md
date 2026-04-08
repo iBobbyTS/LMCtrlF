@@ -25,6 +25,13 @@ During development:
 - the Electron main process probes for a free localhost backend port starting at `8000`, passes the selected port to the sidecar, and waits for a healthy `/health` response before creating the desktop window
 - the desktop window keeps a minimum width large enough to preserve the project chat header layout
 
+During release packaging:
+
+- the React renderer is built into `apps/desktop/dist/renderer`
+- the Electron main and preload entries are bundled into `apps/desktop/dist/electron`
+- the Python backend is frozen with PyInstaller into `apps/desktop/dist/backend`
+- Electron packages the built desktop application and bundled backend together
+
 ## Current Scope
 
 The current implementation provides:
@@ -40,6 +47,8 @@ The current implementation provides:
 - backend connectivity handling that blocks the UI behind a retry-only `Backend Unreachable` dialog whenever the sidecar cannot be reached
 - a chat view with a floating `Threads` button that controls a pinned panel on wide layouts, a temporary drawer on narrow layouts, internal-only scrolling for threads and messages, and SQLite-backed thread/message history
 - a Settings surface with persisted provider selection, embedding/chat model fields, and local accessibility toggles
+- release packaging scripts for macOS `.app` output and Windows NSIS preparation
+- packaged runtime support for a bundled backend executable plus Electron `userData` storage paths
 
 ## Renderer Behavior
 
@@ -70,3 +79,4 @@ The repository does not yet include:
 - multi-worker or distributed indexing
 - non-LM Studio chat provider implementations
 - persisted accessibility settings
+- code signing or notarization for packaged desktop releases

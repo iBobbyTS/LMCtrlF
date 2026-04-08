@@ -12,5 +12,6 @@ dependencies:
   - uvicorn
   - pydantic>=2
   - pydantic-settings
+  - pyinstaller
   - pytest
   - pytest-asyncio
