@@ -1038,10 +1038,10 @@ describe("App", () => {
     await screen.findByText("No projects yet");
     fireEvent.click(screen.getByRole("button", { name: "Settings" }));
 
-    fireEvent.change(screen.getByLabelText("Embedding model"), {
+    fireEvent.change(screen.getByLabelText(/Embedding model/i), {
       target: { value: "custom-embedding-model" }
     });
-    fireEvent.change(screen.getByLabelText("Chatting model"), {
+    fireEvent.change(screen.getByLabelText(/Chatting model/i), {
       target: { value: "custom-chat-model" }
     });
     fireEvent.click(screen.getByRole("button", { name: "Save settings" }));
