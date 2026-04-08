@@ -1041,15 +1041,18 @@ describe("App", () => {
     fireEvent.change(screen.getByLabelText(/Embedding model/i), {
       target: { value: "custom-embedding-model" }
     });
-    fireEvent.change(screen.getByLabelText(/Chatting model/i), {
-      target: { value: "custom-chat-model" }
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Save settings" }));
+  fireEvent.change(screen.getByLabelText(/Chatting model/i), {
+    target: { value: "custom-chat-model" }
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Save settings" }));
 
-    await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledWith(
-        "http://127.0.0.1:8000/settings/model",
-        expect.objectContaining({ method: "PUT" })
+  expect(await screen.findByRole("dialog", { name: "Embedding model changed" })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+
+  await waitFor(() => {
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://127.0.0.1:8000/settings/model",
+      expect.objectContaining({ method: "PUT" })
       );
     });
   });
@@ -1074,7 +1077,7 @@ describe("App", () => {
   await screen.findByRole("button", { name: /Field Notes 0 files/i });
   fireEvent.click(screen.getByRole("button", { name: "Settings" }));
 
-  fireEvent.change(screen.getByLabelText("Embedding model"), {
+  fireEvent.change(screen.getByLabelText(/Embedding model/i), {
     target: { value: "custom-embedding-model" }
   });
   fireEvent.click(screen.getByRole("button", { name: "Save settings" }));
@@ -1093,7 +1096,7 @@ it("reverts embedding model changes without saving", async () => {
   await screen.findByText("No projects yet");
   fireEvent.click(screen.getByRole("button", { name: "Settings" }));
 
-  const embeddingInput = screen.getByLabelText("Embedding model") as HTMLInputElement;
+  const embeddingInput = screen.getByLabelText(/Embedding model/i) as HTMLInputElement;
   const originalValue = embeddingInput.value;
 
   fireEvent.change(embeddingInput, { target: { value: "custom-embedding-model" } });
@@ -1107,7 +1110,7 @@ it("reverts embedding model changes without saving", async () => {
     expect(screen.queryByRole("dialog", { name: "Embedding model changed" })).not.toBeInTheDocument();
   });
 
-  expect((screen.getByLabelText("Embedding model") as HTMLInputElement).value).toBe(originalValue);
+  expect((screen.getByLabelText(/Embedding model/i) as HTMLInputElement).value).toBe(originalValue);
 
   const settingsPutCalls = fetchMock.mock.calls.filter(
     (call) =>
@@ -1149,7 +1152,7 @@ it("continues embedding model changes by saving and reindexing existing document
   await screen.findByRole("button", { name: /Field Notes 1 files/i });
   fireEvent.click(screen.getByRole("button", { name: "Settings" }));
 
-  fireEvent.change(screen.getByLabelText("Embedding model"), {
+  fireEvent.change(screen.getByLabelText(/Embedding model/i), {
     target: { value: "custom-embedding-model" }
   });
   fireEvent.click(screen.getByRole("button", { name: "Save settings" }));
