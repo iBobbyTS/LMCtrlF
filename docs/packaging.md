@@ -37,6 +37,10 @@ If `pnpm dlx electron-builder` is unstable on the local machine, install `electr
 3. Freeze the Python backend into `apps/desktop/dist/backend/lmctrlf-backend`
 4. Package the desktop application with `electron-builder`
 
+Renderer assets that come from `apps/desktop/public` must be referenced through Vite's base-aware asset paths. Root-absolute paths such as `/asset.png` work in development but break in packaged `file://` builds.
+
+The packaged preload bridge runs inside Electron's sandboxed preload runtime. Keep it free of Node-only imports such as `node:path` so the file-path bridge continues to load in release builds.
+
 ## Current Constraints
 
 - This repository does not yet configure code signing, notarization, or certificate-based release signing

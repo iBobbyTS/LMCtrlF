@@ -259,3 +259,5 @@ The preload layer exposes a browser bridge for backend access and Electron file 
 window.lmctrlf?.getBackendBaseUrl(): string
 window.lmctrlf?.getPathForFile(file: File): string
 ```
+
+The packaged preload implementation is intentionally limited to browser-safe and Electron-safe modules. It must not depend on Node-only path helpers because release builds execute the preload bridge inside Electron's sandboxed preload runtime.

@@ -43,8 +43,10 @@
 ### Desktop Package
 
 - desktop runtime config resolves fallback values correctly
+- desktop runtime config resolves the preload backend URL from runtime arguments and environment fallbacks
 - desktop runtime config resolves built renderer and preload paths for packaged builds
 - packaged backend launches resolve bundled executable and user-data-backed database paths
+- renderer asset helpers keep public-file URLs compatible with both dev-server and packaged `file://` builds
 - renderer loads an empty Projects state from the backend
 - startup health-check failures show a retry-only `Backend Unreachable` dialog
 - later backend connection failures also reuse the retry-only `Backend Unreachable` dialog

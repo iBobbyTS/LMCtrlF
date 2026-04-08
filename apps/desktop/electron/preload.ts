@@ -1,11 +1,8 @@
 import { contextBridge, webUtils } from "electron";
 
-import { resolveBackendBaseUrl } from "./config";
+import { resolveRuntimeBackendBaseUrl } from "./runtime-config";
 
-const runtimeArgument = process.argv.find((value) => value.startsWith("--backend-base-url="));
-const backendBaseUrl = runtimeArgument
-  ? runtimeArgument.replace("--backend-base-url=", "")
-  : resolveBackendBaseUrl(process.env.LMCTRLF_BACKEND_URL);
+const backendBaseUrl = resolveRuntimeBackendBaseUrl();
 
 contextBridge.exposeInMainWorld("lmctrlf", {
   getBackendBaseUrl: () => backendBaseUrl,

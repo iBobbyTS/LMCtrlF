@@ -31,6 +31,8 @@ During release packaging:
 - the Electron main and preload entries are bundled into `apps/desktop/dist/electron`
 - the Python backend is frozen with PyInstaller into `apps/desktop/dist/backend`
 - Electron packages the built desktop application and bundled backend together
+- packaged preload code stays sandbox-safe and avoids Node-only imports so file-path bridging continues to work inside the release app
+- renderer public assets resolve through Vite's configured base URL so packaged `file://` builds do not depend on root-absolute `/...` paths
 
 ## Current Scope
 

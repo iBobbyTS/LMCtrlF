@@ -34,6 +34,7 @@ import {
   type AccessibilityOption,
   type ProviderDraft
 } from "./defaults";
+import { dragAndDropArrowPath } from "./assets";
 import "./styles.css";
 
 type AppView = "projects" | "settings" | "project-files" | "project-chat" | "project-import";
@@ -1669,7 +1670,7 @@ const App = () => {
                 setFiles(droppedFiles);
               }}
             >
-              <img alt="" className="import-dropzone__icon" src="/dragndroparrow.png" />
+              <img alt="" className="import-dropzone__icon" src={dragAndDropArrowPath} />
               <p>Drag PDF files here or choose them from disk.</p>
               <label className="secondary-action">
                 Select Files
