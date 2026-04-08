@@ -5,6 +5,7 @@
 - macOS packaging requires macOS, Conda, the `lmctrlf-dev` environment, Node.js, and `pnpm`
 - Windows packaging requires Windows (or Windows CI), Conda, the `lmctrlf-dev` environment, Node.js, and `pnpm`
 - `PyInstaller` must be available inside the Conda environment because the desktop package bundles a frozen Python sidecar
+- Packaging scripts prefer an installed `electron-builder` binary and fall back to `pnpm dlx electron-builder@26.0.12` when one is not available
 
 ## Release Outputs
 
@@ -26,6 +27,8 @@ Run Windows packaging from a Windows machine or CI worker:
 ```powershell
 pnpm package:desktop:win
 ```
+
+If `pnpm dlx electron-builder` is unstable on the local machine, install `electron-builder` on the host first so the packaging scripts can use the direct binary path.
 
 ## Packaging Flow
 

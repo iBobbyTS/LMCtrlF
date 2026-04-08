@@ -18,4 +18,10 @@ conda run -n lmctrlf-dev python services/backend/scripts/package_backend.py --pl
 
 cd "$DESKTOP_ROOT"
 export CSC_IDENTITY_AUTO_DISCOVERY=false
-pnpm dlx electron-builder@26.0.12 --config ./electron-builder.json --publish never --mac dir
+export NODE_OPTIONS="${NODE_OPTIONS:+$NODE_OPTIONS }--max-old-space-size=8192"
+
+if command -v electron-builder >/dev/null 2>&1; then
+  electron-builder --config ./electron-builder.json --publish never --mac dir
+else
+  pnpm dlx electron-builder@26.0.12 --config ./electron-builder.json --publish never --mac dir
+fi

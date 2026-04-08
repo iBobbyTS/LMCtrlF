@@ -16,4 +16,16 @@ conda run -n lmctrlf-dev python services/backend/scripts/package_backend.py --pl
 
 Set-Location $desktopRoot
 $env:CSC_IDENTITY_AUTO_DISCOVERY = "false"
-pnpm dlx electron-builder@26.0.12 --config .\electron-builder.json --publish never --win nsis
+$existingNodeOptions = $env:NODE_OPTIONS
+if ([string]::IsNullOrWhiteSpace($existingNodeOptions)) {
+  $env:NODE_OPTIONS = "--max-old-space-size=8192"
+} else {
+  $env:NODE_OPTIONS = "$existingNodeOptions --max-old-space-size=8192"
+}
+
+$builderCommand = Get-Command electron-builder -ErrorAction SilentlyContinue
+if ($null -ne $builderCommand) {
+  electron-builder --config .\electron-builder.json --publish never --win nsis
+} else {
+  pnpm dlx electron-builder@26.0.12 --config .\electron-builder.json --publish never --win nsis
+}
